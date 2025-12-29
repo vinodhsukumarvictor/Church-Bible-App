@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bible Reading Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#4b0082" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>📖 Bible Reading Tracker</h1>
+    <div class="header-controls">
+      <span id="dayLabel" class="day-label"></span>
+      <div class="view-toggle">
+        <button id="viewHome" class="btn primary">Home</button>
+        <button id="viewBooks" class="btn">Books</button>
+        <button id="viewPlans" class="btn">Plans</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <aside class="sidebar" id="booksSidebar">
+      <header>
+        <div class="logo">BR</div>
+        <div>
+          <h1>Bible Reader</h1>
+          <p class="muted">Track chapters you've read</p>
+        </div>
+      </header>
+
+      <div class="overall">
+        <svg class="donut" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="4"/>
+          <circle id="donutArc" cx="18" cy="18" r="15.9" fill="none" stroke="url(#gradient)" stroke-width="4" stroke-linecap="round" transform="rotate(-90 18 18)"/>
+          <text id="donutText" x="18" y="20.5" text-anchor="middle" font-size="6" fill="#e6eef8" font-weight="700">0%</text>
+        </svg>
+        <div class="overall-stats">
+          <p class="small">Overall progress</p>
+          <div class="progress-bar">
+            <div id="overallFill" class="progress-fill"></div>
+          </div>
+          <p class="small" id="overallText">0 / 1189 chapters</p>
+        </div>
+      </div>
+
+      <h2 class="small muted">Books</h2>
+      <div class="books-list" id="booksList"></div>
+      
+      
+    </aside>
+
+    
+
+    <div class="right-pane">
+    <section id="home-view" class="card">
+      <div class="home-grid">
+        <section class="home-card" aria-labelledby="home-announcements-title">
+          <div class="home-card-head">
+            <div>
+              <p class="eyebrow">Church</p>
+              <h3 id="home-announcements-title">Announcements</h3>
+              <p class="small muted">Stay updated with the latest news</p>
+            </div>
+          </div>
+          <ul id="homeAnnouncements" class="list"></ul>
+        </section>
+
+        <section class="home-card" aria-labelledby="home-sermons-title">
+          <div class="home-card-head">
+            <div>
+              <p class="eyebrow">Sermons</p>
+              <h3 id="home-sermons-title">Recent Sermons</h3>
+              <p class="small muted">Watch or listen on the go</p>
+            </div>
+          </div>
+          <div id="homeSermons" class="sermon-grid"></div>
+        </section>
+
+        <section class="home-card" aria-labelledby="home-posts-title">
+          <div class="home-card-head">
+            <div>
+              <p class="eyebrow">Community</p>
+              <h3 id="home-posts-title">Latest Posts</h3>
+              <p class="small muted">Encouragement and updates from members</p>
+            </div>
+          </div>
+          <div id="homePosts" class="posts-list"></div>
+        </section>
+
+        <section class="home-card" aria-labelledby="home-kids-title">
+          <div class="home-card-head">
+            <div>
+              <p class="eyebrow">Kids Corner</p>
+              <h3 id="home-kids-title">Creative Gallery</h3>
+              <p class="small muted">Celebrate what the kids are making</p>
+            </div>
+            <label class="btn" for="kidsUpload">Upload</label>
+            <input id="kidsUpload" type="file" accept="image/*" class="sr" aria-label="Upload kids artwork">
+          </div>
+          <div id="kidsGallery" class="kids-grid"></div>
+        </section>
+
+        <section class="home-card" aria-labelledby="home-quiz-title">
+          <div class="home-card-head">
+            <div>
+              <p class="eyebrow">Quiz</p>
+              <h3 id="home-quiz-title">Daily Bible Quiz</h3>
+              <p class="small muted">Test your knowledge and track streaks</p>
+            </div>
+          </div>
+          <div id="quizContainer" class="quiz-box">
+            <p id="quizQuestion" class="quiz-question"></p>
+            <div id="quizOptions" class="quiz-options"></div>
+            <div id="quizFeedback" class="quiz-feedback" aria-live="polite"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="verse" class="card">
+      <h2>Verse of the Day ✨</h2>
+      <blockquote id="verse-text">Loading...</blockquote>
+      <p id="verse-ref" class="muted"></p>
+    </section>
+    
+    <section id="plans-view" class="card" hidden>
+      <div class="topline">
+        <div>
+          <h2>Reading Plans</h2>
+          <p class="small muted" id="planDayLabel">Choose a plan and day</p>
+        </div>
+        <div class="plan-controls">
+          <label for="planSelect" class="sr">Plan</label>
+          <select id="planSelect" aria-label="Select reading plan">
+            <option value="canonical">Canonical (Genesis → Revelation)</option>
+            <option value="chronological">Commercial Chronological</option>
+          </select>
+          <label for="daySelect" class="sr">Day</label>
+          <select id="daySelect" aria-label="Select day">
+            <option value="">Select a plan first</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="reading-list" class="reading-list">Loading...</div>
+      <div id="planStatus" class="plan-status" hidden>
+        <span id="planStatusText"></span>
+        <button id="planRetry" class="btn" style="margin-left:8px;">Retry load</button>
+      </div>
+      <!-- file-hint removed per user's request to simplify the UI when running locally -->
+      <div class="actions">
+        <button id="mark-complete" class="btn primary">Mark as Completed ✅</button>
+        <button id="fullPlanToggle" class="btn" aria-expanded="false" style="margin-left:8px;">Show full plan</button>
+      </div>
+      <p id="progress" class="muted"></p>
+      <div id="fullPlan" class="full-plan" hidden></div>
+      <section id="plan-history" class="card small-card">
+        <h3>Your Progress</h3>
+        <ul id="completed-days" class="history-list"></ul>
+      </section>
+    </section>
+
+    <section id="books-view" class="card">
+      <div class="topline">
+        <div>
+          <h2 id="bookTitle">Genesis</h2>
+          <p class="small muted" id="bookMeta">0 / 50 chapters — 0%</p>
+        </div>
+        <div class="filters">
+          <button class="btn" data-filter="all">All</button>
+          <button class="btn" data-filter="read">Read</button>
+          <button class="btn" data-filter="unread">Unread</button>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" id="markAllBtn">Mark all read</button>
+        <button class="btn warn" id="clearBtn">Clear book</button>
+        <button class="btn" id="exportBtn">Export JSON</button>
+        <input type="file" id="importFile" class="import-file">
+        <label for="importFile" class="btn">Import JSON</label>
+      </div>
+
+      <div class="chapter-grid" id="chaptersContainer"></div>
+    </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>Made with ❤️ for daily devotion</p>
+  </footer>
+
+  <script src="data/embedded-plans.js"></script>
+  <script src="script.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js")
+        .then(() => console.log("✅ Service Worker Registered"))
+        .catch(err => console.log("SW registration failed:", err));
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "name": "bible-reader",
+  "version": "1.0.0",
+  "description": "A web app to track chapters read in the Bible.",
+  "main": "index.html",
+  "scripts": {
+    "start": "http-server .",
+    "build": "echo 'No build process defined'",
+    "test": "echo 'No tests defined'"
+  },
+  "keywords": [
+    "PWA",
+    "Bible",
+    "Reader",
+    "Tracking"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "http-server": "^0.12.3"
+  },
+  "devDependencies": {},
+  "homepage": ".",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/bible-reader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/bible-reader/issues"
+  },
+  "homepage": "https://yourusername.github.io/bible-reader/"
+}
