@@ -718,20 +718,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function render(){ renderBooks(); renderChapters(document.querySelector('.filters .btn.active')?.dataset.filter || 'all'); renderOverall(); }
 
-    // View toggle UI
-    const viewBooksBtn = document.getElementById('viewBooks');
-    const viewPlansBtn = document.getElementById('viewPlans');
-    const viewHomeBtn = document.getElementById('viewHome');
+    // View toggle UI with bottom navigation
     const booksSidebar = document.getElementById('booksSidebar');
     const booksView = document.getElementById('books-view');
     const planView = document.getElementById('plans-view');
     const homeView = document.getElementById('home-view');
     const verseCard = document.getElementById('verse');
 
-    function setActiveButton(target){
-      [viewHomeBtn, viewBooksBtn, viewPlansBtn].forEach(btn=>{
-        if (!btn) return;
-        btn.classList.toggle('primary', btn===target);
+    function setActiveNav(nav) {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.nav === nav);
       });
     }
 
@@ -741,7 +737,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(booksView) booksView.hidden = false;
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
-      setActiveButton(viewBooksBtn);
+      setActiveNav('books');
     }
 
     function showPlans(){
@@ -749,8 +745,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(booksSidebar) booksSidebar.hidden = true;
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = false;
-      if(verseCard) verseCard.hidden = true; // hide verse on Plans tab
-      setActiveButton(viewPlansBtn);
+      if(verseCard) verseCard.hidden = true;
+      setActiveNav('plans');
     }
 
     function showHome(){
@@ -759,16 +755,24 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
-      setActiveButton(viewHomeBtn);
+      setActiveNav('home');
     }
 
-    if(viewBooksBtn) viewBooksBtn.addEventListener('click', ()=>{ showBooks(); render(); });
-    if(viewPlansBtn) viewPlansBtn.addEventListener('click', ()=>{ showPlans(); });
-    if(viewHomeBtn) viewHomeBtn.addEventListener('click', ()=>{ showHome(); });
+    // Bottom navigation listeners
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const nav = item.dataset.nav;
+        if (nav === 'home') showHome();
+        else if (nav === 'books') { showBooks(); render(); }
+        else if (nav === 'plans') showPlans();
+        else if (nav === 'discover') { alert('Discover coming soon'); }
+        else if (nav === 'more') { alert('More coming soon'); }
+      });
+    });
 
-  // initialize UI (start with Home visible)
-  showHome();
-  render();
+    // Initialize to Home view
+    showHome();
+    render();
   })();
 
 });

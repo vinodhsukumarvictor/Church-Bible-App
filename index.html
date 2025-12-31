@@ -10,14 +10,23 @@
 </head>
 <body>
   <header class="site-header">
-    <h1>📖 Bible Reading Tracker</h1>
-    <div class="header-controls">
-      <span id="dayLabel" class="day-label"></span>
-      <div class="view-toggle">
-        <button id="viewHome" class="btn primary">Home</button>
-        <button id="viewBooks" class="btn">Books</button>
-        <button id="viewPlans" class="btn">Plans</button>
-      </div>
+    <div>
+      <h1>Today</h1>
+      <p class="greeting">Good afternoon, Vinodh</p>
+    </div>
+    <div class="header-actions">
+      <button class="action-icon" aria-label="Streak">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </button>
+      <button class="action-icon" aria-label="Notifications">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 01-3.46 0"/>
+        </svg>
+      </button>
+      <button class="profile-btn">V</button>
     </div>
   </header>
 
@@ -48,150 +57,242 @@
 
       <h2 class="small muted">Books</h2>
       <div class="books-list" id="booksList"></div>
-      
-      
     </aside>
 
-    
-
     <div class="right-pane">
-    <section id="home-view" class="card">
-      <div class="home-grid">
-        <section class="home-card" aria-labelledby="home-announcements-title">
-          <div class="home-card-head">
-            <div>
-              <p class="eyebrow">Church</p>
-              <h3 id="home-announcements-title">Announcements</h3>
-              <p class="small muted">Stay updated with the latest news</p>
+      <section id="home-view" class="card">
+        <div class="home-grid">
+          <section class="home-card" aria-labelledby="home-announcements-title">
+            <div class="home-card-head">
+              <div>
+                <p class="eyebrow">Church</p>
+                <h3 id="home-announcements-title">Announcements</h3>
+                <p class="small muted">Stay updated with the latest news</p>
+              </div>
             </div>
-          </div>
-          <ul id="homeAnnouncements" class="list"></ul>
-        </section>
+            <ul id="homeAnnouncements" class="list"></ul>
+          </section>
 
-        <section class="home-card" aria-labelledby="home-sermons-title">
-          <div class="home-card-head">
-            <div>
-              <p class="eyebrow">Sermons</p>
-              <h3 id="home-sermons-title">Recent Sermons</h3>
-              <p class="small muted">Watch or listen on the go</p>
+          <section class="home-card" aria-labelledby="home-sermons-title">
+            <div class="home-card-head">
+              <div>
+                <p class="eyebrow">Sermons</p>
+                <h3 id="home-sermons-title">Recent Sermons</h3>
+                <p class="small muted">Watch or listen on the go</p>
+              </div>
             </div>
-          </div>
-          <div id="homeSermons" class="sermon-grid"></div>
-        </section>
+            <div id="homeSermons" class="sermon-grid"></div>
+          </section>
 
-        <section class="home-card" aria-labelledby="home-posts-title">
-          <div class="home-card-head">
-            <div>
-              <p class="eyebrow">Community</p>
-              <h3 id="home-posts-title">Latest Posts</h3>
-              <p class="small muted">Encouragement and updates from members</p>
+          <section class="home-card" aria-labelledby="home-posts-title">
+            <div class="home-card-head">
+              <div>
+                <p class="eyebrow">Community</p>
+                <h3 id="home-posts-title">Latest Posts</h3>
+                <p class="small muted">Encouragement and updates from members</p>
+              </div>
             </div>
-          </div>
-          <div id="homePosts" class="posts-list"></div>
-        </section>
+            <div id="homePosts" class="posts-list"></div>
+          </section>
 
-        <section class="home-card" aria-labelledby="home-kids-title">
-          <div class="home-card-head">
-            <div>
-              <p class="eyebrow">Kids Corner</p>
-              <h3 id="home-kids-title">Creative Gallery</h3>
-              <p class="small muted">Celebrate what the kids are making</p>
+          <section class="home-card" aria-labelledby="home-kids-title">
+            <div class="home-card-head">
+              <div>
+                <p class="eyebrow">Kids Corner</p>
+                <h3 id="home-kids-title">Creative Gallery</h3>
+                <p class="small muted">Celebrate what the kids are making</p>
+              </div>
+              <label class="btn small-btn" for="kidsUpload">Upload</label>
+              <input id="kidsUpload" type="file" accept="image/*" class="sr" aria-label="Upload kids artwork">
             </div>
-            <label class="btn" for="kidsUpload">Upload</label>
-            <input id="kidsUpload" type="file" accept="image/*" class="sr" aria-label="Upload kids artwork">
-          </div>
-          <div id="kidsGallery" class="kids-grid"></div>
-        </section>
+            <div id="kidsGallery" class="kids-grid"></div>
+          </section>
 
-        <section class="home-card" aria-labelledby="home-quiz-title">
-          <div class="home-card-head">
-            <div>
-              <p class="eyebrow">Quiz</p>
-              <h3 id="home-quiz-title">Daily Bible Quiz</h3>
-              <p class="small muted">Test your knowledge and track streaks</p>
+          <section class="home-card" aria-labelledby="home-quiz-title">
+            <div class="home-card-head">
+              <div>
+                <p class="eyebrow">Quiz</p>
+                <h3 id="home-quiz-title">Daily Bible Quiz</h3>
+                <p class="small muted">Test your knowledge and track streaks</p>
+              </div>
             </div>
-          </div>
-          <div id="quizContainer" class="quiz-box">
-            <p id="quizQuestion" class="quiz-question"></p>
-            <div id="quizOptions" class="quiz-options"></div>
-            <div id="quizFeedback" class="quiz-feedback" aria-live="polite"></div>
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <section id="verse" class="card">
-      <h2>Verse of the Day ✨</h2>
-      <blockquote id="verse-text">Loading...</blockquote>
-      <p id="verse-ref" class="muted"></p>
-    </section>
-    
-    <section id="plans-view" class="card" hidden>
-      <div class="topline">
-        <div>
-          <h2>Reading Plans</h2>
-          <p class="small muted" id="planDayLabel">Choose a plan and day</p>
+            <div id="quizContainer" class="quiz-box">
+              <p id="quizQuestion" class="quiz-question"></p>
+              <div id="quizOptions" class="quiz-options"></div>
+              <div id="quizFeedback" class="quiz-feedback" aria-live="polite"></div>
+            </div>
+          </section>
         </div>
-        <div class="plan-controls">
-          <label for="planSelect" class="sr">Plan</label>
-          <select id="planSelect" aria-label="Select reading plan">
-            <option value="canonical">Canonical (Genesis → Revelation)</option>
-            <option value="chronological">Commercial Chronological</option>
-          </select>
-          <label for="daySelect" class="sr">Day</label>
-          <select id="daySelect" aria-label="Select day">
-            <option value="">Select a plan first</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="reading-list" class="reading-list">Loading...</div>
-      <div id="planStatus" class="plan-status" hidden>
-        <span id="planStatusText"></span>
-        <button id="planRetry" class="btn" style="margin-left:8px;">Retry load</button>
-      </div>
-      <!-- file-hint removed per user's request to simplify the UI when running locally -->
-      <div class="actions">
-        <button id="mark-complete" class="btn primary">Mark as Completed ✅</button>
-        <button id="fullPlanToggle" class="btn" aria-expanded="false" style="margin-left:8px;">Show full plan</button>
-      </div>
-      <p id="progress" class="muted"></p>
-      <div id="fullPlan" class="full-plan" hidden></div>
-      <section id="plan-history" class="card small-card">
-        <h3>Your Progress</h3>
-        <ul id="completed-days" class="history-list"></ul>
       </section>
-    </section>
 
-    <section id="books-view" class="card">
-      <div class="topline">
-        <div>
-          <h2 id="bookTitle">Genesis</h2>
-          <p class="small muted" id="bookMeta">0 / 50 chapters — 0%</p>
+      <section id="verse" class="card verse-card">
+        <h2>Verse of the day ✨</h2>
+        <blockquote id="verse-text">Loading...</blockquote>
+        <p id="verse-ref" class="muted"></p>
+        <div class="verse-actions">
+          <button class="action-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-right:4px">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+            </svg>
+            893.8K
+          </button>
+          <button class="action-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-right:4px">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+            </svg>
+            13.3K
+          </button>
+          <button class="action-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-right:4px">
+              <path d="M18 8L22 12L18 16"/>
+              <path d="M2 12H22"/>
+            </svg>
+            337.1K
+          </button>
+          <button class="action-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;vertical-align:middle;margin-right:4px">
+              <circle cx="12" cy="12" r="1" fill="currentColor"/>
+              <circle cx="19" cy="12" r="1" fill="currentColor"/>
+              <circle cx="5" cy="12" r="1" fill="currentColor"/>
+            </svg>
+            More
+          </button>
         </div>
-        <div class="filters">
-          <button class="btn" data-filter="all">All</button>
-          <button class="btn" data-filter="read">Read</button>
-          <button class="btn" data-filter="unread">Unread</button>
+      </section>
+      
+      <section id="plans-view" class="card" hidden>
+        <div class="plans-header">
+          <div>
+            <h2>📚 Reading Plans</h2>
+            <p class="small muted" id="planDayLabel">Track your daily Bible reading journey</p>
+          </div>
         </div>
-      </div>
 
-      <div class="controls">
-        <button class="btn primary" id="markAllBtn">Mark all read</button>
-        <button class="btn warn" id="clearBtn">Clear book</button>
-        <button class="btn" id="exportBtn">Export JSON</button>
-        <input type="file" id="importFile" class="import-file">
-        <label for="importFile" class="btn">Import JSON</label>
-      </div>
+        <div class="plan-selector-card">
+          <div class="plan-controls">
+            <div class="control-group">
+              <label for="planSelect">📖 Select Plan</label>
+              <select id="planSelect" aria-label="Select reading plan">
+                <option value="canonical">Canonical (Genesis → Revelation)</option>
+                <option value="chronological">Chronological</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label for="daySelect">📅 Select Day</label>
+              <select id="daySelect" aria-label="Select day">
+                <option value="">Choose a day</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
-      <div class="chapter-grid" id="chaptersContainer"></div>
-    </section>
+        <div class="plan-content-wrapper">
+          <div class="today-reading-card">
+            <div class="card-header">
+              <h3>📖 Today's Reading</h3>
+              <p id="progress" class="reading-meta"></p>
+            </div>
+            <div id="reading-list" class="reading-list">Loading...</div>
+            <div id="planStatus" class="plan-status" hidden>
+              <span id="planStatusText"></span>
+              <button id="planRetry" class="btn">🔄 Retry</button>
+            </div>
+            <div class="actions">
+              <button id="mark-complete" class="btn primary">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:middle;margin-right:6px">
+                  <path d="M13.5 4L6 11.5L2.5 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Mark Complete
+              </button>
+              <button id="fullPlanToggle" class="btn" aria-expanded="false">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:inline-block;vertical-align:middle;margin-right:6px">
+                  <path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                View Full Plan
+              </button>
+            </div>
+          </div>
+
+          <div class="plan-sidebar">
+            <section class="progress-card">
+              <h3>📊 Your Progress</h3>
+              <ul id="completed-days" class="history-list"></ul>
+            </section>
+          </div>
+        </div>
+
+        <div id="fullPlan" class="full-plan" hidden></div>
+      </section>
+
+      <section id="books-view" class="card" hidden>
+        <div class="topline">
+          <div>
+            <h2 id="bookTitle">Genesis</h2>
+            <p class="small muted" id="bookMeta">0 / 50 chapters — 0%</p>
+          </div>
+          <div class="filters">
+            <button class="btn" data-filter="all">All</button>
+            <button class="btn" data-filter="read">Read</button>
+            <button class="btn" data-filter="unread">Unread</button>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn primary" id="markAllBtn">Mark all read</button>
+          <button class="btn warn" id="clearBtn">Clear book</button>
+          <button class="btn" id="exportBtn">Export JSON</button>
+          <input type="file" id="importFile" class="import-file">
+          <label for="importFile" class="btn">Import JSON</label>
+        </div>
+
+        <div class="chapter-grid" id="chaptersContainer"></div>
+      </section>
     </div>
   </main>
 
   <footer class="site-footer">
     <p>Made with ❤️ for daily devotion</p>
   </footer>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-nav="home">
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-item" data-nav="books">
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+      </svg>
+      <span>Bible</span>
+    </button>
+    <button class="nav-item" data-nav="plans">
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+      <span>Plans</span>
+    </button>
+    <button class="nav-item" data-nav="discover">
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <span>Discover</span>
+    </button>
+    <button class="nav-item" data-nav="more">
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="5" r="1" fill="currentColor"/>
+        <circle cx="12" cy="12" r="1" fill="currentColor"/>
+        <circle cx="12" cy="19" r="1" fill="currentColor"/>
+      </svg>
+      <span>More</span>
+    </button>
+  </nav>
 
   <script src="data/embedded-plans.js"></script>
   <script src="script.js"></script>
