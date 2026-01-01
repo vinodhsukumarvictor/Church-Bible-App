@@ -337,12 +337,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function ensureProfileAndRole(meta = {}) {
     const client = getSupabaseClient();
     if (!client || !supabaseUser) return;
+    
+    // Check for pending profile metadata from signup
+    let pendingMeta = {};
+    try {
+      const stored = localStorage.getItem('pendingProfileMeta');
+      if (stored) {
+        pendingMeta = JSON.parse(stored);
+        localStorage.removeItem('pendingProfileMeta');
+      }
+    } catch (e) {
+      console.warn('Could not retrieve pending profile metadata', e);
+    }
+    
+    // Merge metadata sources: passed in, pending localStorage, user_metadata
     const profilePayload = {
       id: supabaseUser.id,
-      username: meta.username || supabaseUser.user_metadata?.username || undefined,
-      first_name: meta.first_name || supabaseUser.user_metadata?.first_name || undefined,
-      last_name: meta.last_name || supabaseUser.user_metadata?.last_name || undefined,
-      full_name: meta.full_name || [meta.first_name || supabaseUser.user_metadata?.first_name || '', meta.last_name || supabaseUser.user_metadata?.last_name || ''].join(' ').trim() || null
+      username: meta.username || pendingMeta.username || supabaseUser.user_metadata?.username || undefined,
+      first_name: meta.first_name || pendingMeta.first_name || supabaseUser.user_metadata?.first_name || undefined,
+      last_name: meta.last_name || pendingMeta.last_name || supabaseUser.user_metadata?.last_name || undefined,
+      full_name: meta.full_name || pendingMeta.full_name || [
+        meta.first_name || pendingMeta.first_name || supabaseUser.user_metadata?.first_name || '', 
+        meta.last_name || pendingMeta.last_name || supabaseUser.user_metadata?.last_name || ''
+      ].join(' ').trim() || null
     };
     await client.from('profiles').upsert(profilePayload, { onConflict: 'id' });
     // Ensure user role exists
@@ -454,41 +471,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!client) return alert('Supabase not configured.');
     if (!email) return alert('Email is required.');
     
-    // Check if profile fields are filled (indicates new user signup intent)
+    // Store profile metadata in localStorage to apply after successful auth
     const hasProfileData = meta.first_name || meta.last_name || meta.username;
-    
     if (hasProfileData) {
-      // New user flow: use signUp with metadata
       const cleanMeta = {
         first_name: meta.first_name?.trim() || undefined,
         last_name: meta.last_name?.trim() || undefined,
         username: meta.username?.trim() || undefined,
         full_name: [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || undefined
       };
-      const { error } = await client.auth.signUp({
-        email,
-        options: {
-          data: cleanMeta,
-          emailRedirectTo: authRedirectTo
-        }
-      });
-      if (error) {
-        alert(`Magic link failed: ${error.message}`);
-        return;
+      try {
+        localStorage.setItem('pendingProfileMeta', JSON.stringify(cleanMeta));
+      } catch (e) {
+        console.warn('Could not save profile metadata', e);
       }
-      alert('Check your email for a magic link to complete signup!');
-    } else {
-      // Existing user flow: use OTP
-      const { error } = await client.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: authRedirectTo }
-      });
-      if (error) {
-        alert(`Magic link failed: ${error.message}`);
-        return;
-      }
-      alert('Check your email for a magic link to sign in!');
     }
+    
+    // Always use OTP for passwordless auth (works for both new and existing users)
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: { 
+        emailRedirectTo: authRedirectTo,
+        shouldCreateUser: true
+      }
+    });
+    
+    if (error) {
+      alert(`Magic link failed: ${error.message}`);
+      return;
+    }
+    
+    alert(hasProfileData 
+      ? 'Check your email for a magic link to complete signup!' 
+      : 'Check your email for a magic link to sign in!');
   }
 
   async function handleLogout() {

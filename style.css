@@ -201,7 +201,9 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  width: min(360px, 90vw);
+  width: min(420px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -210,17 +212,37 @@ body {
 
 .modal-content input {
   width: 100%;
-  padding: 10px;
+  padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.02);
   color: var(--foreground);
+  font-size: 16px;
+}
+
+.modal-content label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .modal-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+@media (max-width: 480px) {
+  .modal-actions {
+    flex-direction: column;
+  }
+  
+  .modal-actions .btn {
+    width: 100%;
+  }
 }
 
 /* Admin */
@@ -1043,6 +1065,21 @@ main {
     gap: 10px;
     padding: 0 10px 20px;
   }
+  
+  .card {
+    padding: 16px;
+  }
+  
+  .home-card {
+    padding: 16px;
+  }
+  
+  .modal-content {
+    padding: 16px;
+    width: 100vw;
+    max-width: calc(100vw - 20px);
+    border-radius: 12px;
+  }
 }
 
 @media(max-width:600px){
@@ -1059,6 +1096,13 @@ main {
 /* --- Card Styling --- */
 #home-view { padding: 0; background: transparent; box-shadow: none; margin-top: 0; }
 .home-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+@media (max-width: 600px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
 .home-card { 
   background: color-mix(in oklab, var(--card), transparent 30%);
   backdrop-filter: saturate(1.2) blur(6px);
