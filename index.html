@@ -26,7 +26,7 @@
           <path d="M13.73 21a2 2 0 01-3.46 0"/>
         </svg>
       </button>
-      <button class="profile-btn">V</button>
+      <button class="profile-btn" id="userBadge">?</button>
     </div>
   </header>
 
@@ -256,8 +256,88 @@
 
         <div class="chapter-grid" id="chaptersContainer"></div>
       </section>
+
+      <section id="admin-view" class="card" hidden>
+        <div class="topline">
+          <div>
+            <h2>Admin Analytics</h2>
+            <p class="small muted">Visible to admins only</p>
+          </div>
+        </div>
+        <div class="stats-grid" id="adminStats">
+          <div class="stat-card">
+            <p class="eyebrow">Total Users</p>
+            <h3 id="statUsers">-</h3>
+          </div>
+          <div class="stat-card">
+            <p class="eyebrow">Reading Entries</p>
+            <h3 id="statReading">-</h3>
+          </div>
+          <div class="stat-card">
+            <p class="eyebrow">Quiz Submissions</p>
+            <h3 id="statQuiz">-</h3>
+          </div>
+        </div>
+        <div class="admin-role-card">
+          <h4>Manage Roles</h4>
+          <p class="small muted">Admins can promote or demote users via the Supabase RPC.</p>
+          <label>User ID (UUID)
+            <input id="roleUserId" type="text" placeholder="Target user_id" />
+          </label>
+          <label>Role
+            <select id="roleSelect">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
+          </label>
+          <button id="roleUpdateBtn" class="btn small-btn">Update role</button>
+          <div id="roleUpdateStatus" class="small muted"></div>
+        </div>
+        <div class="admin-lists">
+          <div>
+            <h4>Latest Users</h4>
+            <ul id="adminUsers" class="list"></ul>
+          </div>
+          <div>
+            <h4>Latest Reading Updates</h4>
+            <ul id="adminReading" class="list"></ul>
+          </div>
+          <div>
+            <h4>Latest Quiz Submissions</h4>
+            <ul id="adminQuiz" class="list"></ul>
+          </div>
+        </div>
+      </section>
     </div>
   </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <div id="authOverlay" class="modal-overlay" hidden></div>
+  <div id="authModal" class="modal" hidden>
+    <div class="modal-content">
+      <h3>Sign in / Sign up</h3>
+      <p class="small muted">Enter your email to receive a magic link. On first signup, add your name and username.</p>
+      <label>Email
+        <input id="authEmail" type="email" placeholder="you@example.com" />
+      </label>
+      <label>First name (new users)
+        <input id="authFirst" type="text" placeholder="First" />
+      </label>
+      <label>Last name (new users)
+        <input id="authLast" type="text" placeholder="Last" />
+      </label>
+      <label>Username (new users)
+        <input id="authUsername" type="text" placeholder="your_handle" />
+      </label>
+      <div class="modal-actions">
+        <button id="loginBtn" class="btn primary">Send login link</button>
+        <button id="signupBtn" class="btn">Create account (magic link)</button>
+        <button id="logoutBtn" class="btn warn" hidden>Logout</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="site-footer">
     <p>Made with ❤️ for daily devotion</p>
@@ -292,6 +372,13 @@
         <path d="M21 21l-4.35-4.35"/>
       </svg>
       <span>Discover</span>
+    </button>
+    <button class="nav-item" data-nav="admin" hidden>
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/>
+        <path d="M4.93 19a10.12 10.12 0 0114.14 0"/>
+      </svg>
+      <span>Admin</span>
     </button>
     <button class="nav-item" data-nav="more">
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

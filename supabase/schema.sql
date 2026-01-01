@@ -9,10 +9,23 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
+alter table public.profiles
+  add column if not exists username text unique,
+  add column if not exists first_name text,
+  add column if not exists last_name text;
+
 alter table public.profiles enable row level security;
 do $$ begin
   create policy "profiles_select_own" on public.profiles
     for select using (auth.uid() = id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "profiles_select_admin" on public.profiles
+    for select using (
+      exists (
+        select 1 from public.user_roles r where r.user_id = auth.uid() and r.role in ('admin','super_admin')
+      )
+    );
 exception when duplicate_object then null; end $$;
 do $$ begin
   create policy "profiles_upsert_own" on public.profiles
@@ -107,8 +120,8 @@ do $$ begin
   create policy "announcements_insert_admin" on public.announcements
     for insert with check (
       exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception when duplicate_object then null; end $$;
@@ -116,8 +129,8 @@ do $$ begin
   create policy "announcements_update_admin" on public.announcements
     for update using (
       exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception when duplicate_object then null; end $$;
@@ -125,8 +138,8 @@ do $$ begin
   create policy "announcements_delete_admin" on public.announcements
     for delete using (
       exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception when duplicate_object then null; end $$;
@@ -165,8 +178,8 @@ do $$ begin
   create policy "kids_uploads_admin_update" on public.kids_uploads
     for update using (
       exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception when duplicate_object then null; end $$;
@@ -174,8 +187,8 @@ do $$ begin
   create policy "kids_uploads_admin_delete" on public.kids_uploads
     for delete using (
       exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception when duplicate_object then null; end $$;
@@ -199,6 +212,125 @@ create table if not exists public.quiz_scores (
   score int not null,
   created_at timestamptz default now()
 );
+
+-- === Auth roles (per-user role mapping) ===
+create table if not exists public.user_roles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null check (role in ('admin','super_admin','user')),
+  created_at timestamptz default now()
+);
+
+-- Ensure constraint is widened on re-run
+alter table public.user_roles drop constraint if exists user_roles_role_check;
+alter table public.user_roles add constraint user_roles_role_check check (role in ('admin','super_admin','user'));
+
+alter table public.user_roles enable row level security;
+do $$ begin
+  create policy "user_roles_select_self" on public.user_roles
+    for select using (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "user_roles_select_admin" on public.user_roles
+    for select using (
+      exists (
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
+      )
+    );
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "user_roles_admin_manage" on public.user_roles
+    for all using (
+      exists (
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
+      )
+    );
+exception when duplicate_object then null; end $$;
+
+-- Seed admin (idempotent). Update email as needed.
+insert into public.user_roles (user_id, role)
+select id, 'admin'
+from auth.users
+where email = 'gpgvictor@gmail.com'
+on conflict (user_id) do update set role = excluded.role;
+
+-- Admin-only function to set roles
+create or replace function public.set_user_role(target_user_id uuid, new_role text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new_role not in ('admin','super_admin','user') then
+    raise exception 'invalid role';
+  end if;
+  if not exists (
+    select 1 from public.user_roles r where r.user_id = auth.uid() and r.role in ('admin','super_admin')
+  ) then
+    raise exception 'forbidden';
+  end if;
+  insert into public.user_roles (user_id, role)
+  values (target_user_id, new_role)
+  on conflict (user_id) do update set role = excluded.role;
+end;
+$$;
+
+comment on function public.set_user_role is 'Admin-only: promote/demote users';
+
+-- === Reading progress (per book/chapter) ===
+create table if not exists public.reading_progress (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  book text not null,
+  chapter int not null,
+  is_read boolean not null default false,
+  updated_at timestamptz default now(),
+  unique (user_id, book, chapter)
+);
+
+create index if not exists idx_reading_progress_user_book on public.reading_progress(user_id, book);
+
+alter table public.reading_progress enable row level security;
+do $$ begin
+  create policy "reading_progress_select_own" on public.reading_progress
+    for select using (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "reading_progress_upsert_own" on public.reading_progress
+    for insert with check (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "reading_progress_update_own" on public.reading_progress
+    for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "reading_progress_delete_own" on public.reading_progress
+    for delete using (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+
+-- === Quiz submissions (per user/quiz) ===
+create table if not exists public.quiz_submissions (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  quiz_id text not null,
+  answers jsonb not null,
+  score numeric,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_quiz_submissions_user on public.quiz_submissions(user_id);
+
+alter table public.quiz_submissions enable row level security;
+do $$ begin
+  create policy "quiz_submissions_select_own" on public.quiz_submissions
+    for select using (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy "quiz_submissions_insert_own" on public.quiz_submissions
+    for insert with check (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
 
 create index if not exists idx_quiz_scores_user_quiz on public.quiz_scores(user_id, quiz_id);
 
@@ -250,8 +382,8 @@ do $$ begin
         owner = auth.uid()
         or coalesce(metadata->>'approved','false') = 'true'
         or exists (
-          select 1 from public.profiles p
-          where p.id = auth.uid() and p.role in ('admin','super_admin')
+          select 1 from public.user_roles r
+          where r.user_id = auth.uid() and r.role in ('admin','super_admin')
         )
       )
     );
@@ -278,8 +410,8 @@ do $$ begin
     for delete using (
       bucket_id = 'kids-zone'
       and exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception
@@ -293,14 +425,14 @@ do $$ begin
     for update using (
       bucket_id = 'kids-zone'
       and exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     ) with check (
       bucket_id = 'kids-zone'
       and exists (
-        select 1 from public.profiles p
-        where p.id = auth.uid() and p.role in ('admin','super_admin')
+        select 1 from public.user_roles r
+        where r.user_id = auth.uid() and r.role in ('admin','super_admin')
       )
     );
 exception

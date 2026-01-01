@@ -19,13 +19,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   const quizQuestionEl = document.getElementById('quizQuestion');
   const quizOptionsEl = document.getElementById('quizOptions');
   const quizFeedbackEl = document.getElementById('quizFeedback');
+  const authModal = document.getElementById('authModal');
+  const authOverlay = document.getElementById('authOverlay');
+  const authEmail = document.getElementById('authEmail');
+  const authFirst = document.getElementById('authFirst');
+  const authLast = document.getElementById('authLast');
+  const authUsername = document.getElementById('authUsername');
+  const loginBtn = document.getElementById('loginBtn');
+  const signupBtn = document.getElementById('signupBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const userBadge = document.getElementById('userBadge');
+  const adminNavBtn = document.querySelector('[data-nav="admin"]');
 
   const startOfYear = new Date(new Date().getFullYear(), 0, 1);
   const today = new Date();
   const dayOfYear = Math.floor((today - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
 
   let readingPlan = {};
-  let completedDays = JSON.parse(localStorage.getItem("completedDays") || "[]");
+  let readingProgressMap = {}; // { book: { chapter: true } }
+
+  const normalizeBook = (book) => (book || '').toLowerCase();
+
+  let supabaseRole = 'user';
 
   const announcementsSeed = [
     { title: 'Christmas Service Schedule', priority: 'high', tag: 'Services', date: '2025-12-24' },
@@ -172,6 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let supabaseClient = null;
   let supabaseUser = null;
   let supabaseProfile = null;
+  let supabaseRoleRow = null;
   let kidsGalleryData = [];
   let kidsBackendMode = 'local'; // 'local' fallback, 'supabase' when pulling from backend
   let kidsLoading = false;
@@ -253,7 +269,89 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function isAdmin() {
-    return supabaseProfile && (supabaseProfile.role === 'admin' || supabaseProfile.role === 'super_admin');
+    const role = supabaseProfile?.role || supabaseRoleRow?.role || supabaseRole;
+    return role === 'admin' || role === 'super_admin';
+  }
+
+  function requireAuth() {
+    if (!supabaseUser) {
+      if (authModal) authModal.removeAttribute('hidden');
+      if (authOverlay) authOverlay.removeAttribute('hidden');
+      throw new Error('Auth required');
+    }
+  }
+
+  function hideAuthModal() {
+    if (authModal) authModal.setAttribute('hidden', 'true');
+    if (authOverlay) authOverlay.setAttribute('hidden', 'true');
+  }
+
+  function showToast(message, isError = false) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle('warn', !!isError);
+    el.classList.add('show');
+    el.hidden = false;
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+      el.classList.remove('show');
+      el._timer = setTimeout(() => { el.hidden = true; }, 250);
+    }, 2200);
+  }
+
+  async function fetchUserRoleRow() {
+    const client = getSupabaseClient();
+    if (!client || !supabaseUser) return null;
+    const { data, error } = await client
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', supabaseUser.id)
+      .maybeSingle();
+    if (error) {
+      console.warn('Could not load user role', error);
+      return null;
+    }
+    return data || null;
+  }
+
+  async function loadReadingProgress() {
+    const client = getSupabaseClient();
+    if (!client || !supabaseUser) return;
+    const { data, error } = await client
+      .from('reading_progress')
+      .select('book, chapter, is_read')
+      .eq('user_id', supabaseUser.id);
+    if (error) {
+      console.warn('Could not load reading progress', error);
+      readingProgressMap = {};
+      return;
+    }
+    const map = {};
+    (data || []).forEach(row => {
+      const b = normalizeBook(row.book);
+      if (!map[b]) map[b] = {};
+      if (row.is_read) map[b][row.chapter] = true;
+    });
+    readingProgressMap = map;
+  }
+
+  async function ensureProfileAndRole(meta = {}) {
+    const client = getSupabaseClient();
+    if (!client || !supabaseUser) return;
+    const profilePayload = {
+      id: supabaseUser.id,
+      username: meta.username || supabaseUser.user_metadata?.username || undefined,
+      first_name: meta.first_name || supabaseUser.user_metadata?.first_name || undefined,
+      last_name: meta.last_name || supabaseUser.user_metadata?.last_name || undefined,
+      full_name: meta.full_name || [meta.first_name || supabaseUser.user_metadata?.first_name || '', meta.last_name || supabaseUser.user_metadata?.last_name || ''].join(' ').trim() || null
+    };
+    await client.from('profiles').upsert(profilePayload, { onConflict: 'id' });
+    // Ensure user role exists
+    const { data: roleRow } = await client.from('user_roles').select('role').eq('user_id', supabaseUser.id).maybeSingle();
+    if (!roleRow) {
+      await client.from('user_roles').upsert({ user_id: supabaseUser.id, role: 'user' });
+    }
   }
 
   function setKidsStatus(message, isError = false) {
@@ -273,9 +371,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     supabaseClient.auth.onAuthStateChange(async (_event, session) => {
       supabaseUser = session?.user || null;
-      supabaseProfile = await fetchProfile();
+      if (supabaseUser) await ensureProfileAndRole();
+      supabaseProfile = supabaseUser ? await fetchProfile() : null;
+      supabaseRoleRow = supabaseUser ? await fetchUserRoleRow() : null;
+      if (supabaseUser) await loadReadingProgress();
       updateKidsAuthUI();
       refreshKidsFromSupabase();
+      updateAuthUI();
     });
     return supabaseClient;
   }
@@ -305,7 +407,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     supabaseUser = data?.session?.user || null;
     supabaseProfile = supabaseUser ? await fetchProfile() : null;
+    supabaseRoleRow = supabaseUser ? await fetchUserRoleRow() : null;
+    if (supabaseUser) await ensureProfileAndRole();
+    if (supabaseUser) await loadReadingProgress();
     updateKidsAuthUI();
+    updateAuthUI();
   }
 
   function updateKidsAuthUI() {
@@ -331,6 +437,71 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       setKidsStatus('Sign in to upload (uploads stay hidden until approved).', false);
     }
+  }
+
+  function updateAuthUI() {
+    const loggedIn = !!supabaseUser;
+    if (userBadge) {
+      userBadge.textContent = loggedIn ? (supabaseUser.email || 'User') : 'Guest';
+    }
+    if (logoutBtn) logoutBtn.hidden = !loggedIn;
+    if (loginBtn) loginBtn.hidden = loggedIn;
+    if (signupBtn) signupBtn.hidden = loggedIn;
+    if (adminNavBtn) adminNavBtn.hidden = !(loggedIn && isAdmin());
+    if (loggedIn) hideAuthModal();
+  }
+
+  const authRedirectTo = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
+
+  async function handleLogin(email) {
+    const client = getSupabaseClient();
+    if (!client) return alert('Supabase not configured.');
+    if (!email) return alert('Email is required.');
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: authRedirectTo }
+    });
+    if (error) {
+      alert(`Login link failed: ${error.message}`);
+      return;
+    }
+    alert('Check your email for a login link. After clicking it, return here.');
+  }
+
+  async function handleSignup(email, meta = {}) {
+    const client = getSupabaseClient();
+    if (!client) return alert('Supabase not configured.');
+    if (!email) return alert('Email is required.');
+    const cleanMeta = {
+      first_name: meta.first_name?.trim() || undefined,
+      last_name: meta.last_name?.trim() || undefined,
+      username: meta.username?.trim() || undefined,
+      full_name: [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || undefined
+    };
+    const { error } = await client.auth.signUp({
+      email,
+      options: {
+        data: cleanMeta,
+        emailRedirectTo: authRedirectTo
+      }
+    });
+    if (error) {
+      alert(`Signup failed: ${error.message}`);
+      return;
+    }
+    alert('We sent you a magic link. Open it to finish creating your account.');
+  }
+
+  async function handleLogout() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    await client.auth.signOut();
+    supabaseUser = null;
+    supabaseProfile = null;
+    supabaseRoleRow = null;
+    readingProgressMap = {};
+    updateAuthUI();
+    updateKidsAuthUI();
   }
 
   async function refreshKidsFromSupabase(showErrors = false) {
@@ -646,7 +817,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         quizFeedbackEl.textContent = correct ? 'Correct! 🎉' : 'Try again.';
         quizFeedbackEl.classList.toggle('ok', correct);
         quizFeedbackEl.classList.toggle('warn', !correct);
-        try { localStorage.setItem(quizStorageKey, JSON.stringify({ day: dayOfYear, correct })); } catch (e) { /* ignore */ }
+        try { requireAuth(); } catch { return; }
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return;
+        client.from('quiz_submissions').insert({
+          user_id: supabaseUser.id,
+          quiz_id: `daily-${dayOfYear}`,
+          answers: { selected: optIdx, correctAnswer: item.answer },
+          score: correct ? 1 : 0
+        }).then(({ error }) => {
+          if (error) console.warn('Quiz submission failed', error);
+        });
       });
       quizOptionsEl.appendChild(btn);
     });
@@ -681,21 +862,27 @@ document.addEventListener("DOMContentLoaded", async () => {
       return Math.floor(diff / oneDay);
     }
 
-    function storageKey(planName) {
-      return `completedDays:${planName}`;
+    function isChapterRead(book, chapter) {
+      const b = normalizeBook(book);
+      return !!(readingProgressMap[b] && readingProgressMap[b][chapter]);
+    }
+
+    function dayIsComplete(planName, day) {
+      const plan = plans[planName];
+      const entries = plan ? plan[String(day)] : null;
+      if (!entries || entries.length === 0) return false;
+      return entries.every(e => isChapterRead(e.book, e.chapter));
     }
 
     function loadCompleted(planName) {
-      try {
-        const raw = localStorage.getItem(storageKey(planName));
-        return raw ? JSON.parse(raw) : [];
-      } catch {
-        return [];
+      const plan = plans[planName];
+      if (!plan) return [];
+      const keys = Object.keys(plan).map(n => Number(n)).filter(n => !isNaN(n));
+      const done = [];
+      for (const k of keys) {
+        if (dayIsComplete(planName, k)) done.push(k);
       }
-    }
-
-    function saveCompleted(planName, arr) {
-      localStorage.setItem(storageKey(planName), JSON.stringify(arr));
+      return done.sort((a,b)=>a-b);
     }
 
     async function fetchPlan(name) {
@@ -786,6 +973,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateKidsAuthUI();
       await refreshSession();
       await refreshKidsFromSupabase(true);
+      updateAuthUI();
+
+      if (!supabaseUser) {
+        if (authModal) authModal.removeAttribute('hidden');
+        if (authOverlay) authOverlay.removeAttribute('hidden');
+      }
+
+      if (loginBtn) loginBtn.addEventListener('click', async ()=>{
+        await handleLogin(authEmail?.value?.trim());
+      });
+      if (signupBtn) signupBtn.addEventListener('click', async ()=>{
+        await handleSignup(authEmail?.value?.trim(), {
+          first_name: authFirst?.value,
+          last_name: authLast?.value,
+          username: authUsername?.value
+        });
+      });
+      if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+      if (authOverlay) authOverlay.addEventListener('click', hideAuthModal);
 
       // Fallback render (supabase fetch also renders)
       renderKids();
@@ -903,15 +1109,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function markCompleted() {
+      try { requireAuth(); } catch { return; }
+      const client = getSupabaseClient();
+      if (!client || !supabaseUser) return;
       const planName = getSelectedPlan();
       const day = daySelect ? Number(daySelect.value) : dayOfYear();
-      const completed = loadCompleted(planName);
-      if (!completed.includes(day)) {
-        completed.push(day);
-        completed.sort((a, b) => a - b);
-        saveCompleted(planName, completed);
+      const plan = plans[planName];
+      const entries = plan ? plan[String(day)] : null;
+      if (!entries || entries.length === 0) {
+        alert('No reading assigned for this day.');
+        return;
       }
-      renderHistory();
+      const rows = entries.map(e => ({
+        user_id: supabaseUser.id,
+        book: normalizeBook(e.book),
+        chapter: e.chapter,
+        is_read: true
+      }));
+      client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' })
+        .then(async ({ error }) => {
+          if (error) {
+            alert(`Could not save progress: ${error.message}`);
+            return;
+          }
+          await loadReadingProgress();
+          renderHistory();
+          renderSelectedDay();
+          render();
+        });
     }
 
     function renderHistory() {
@@ -1097,9 +1322,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       {id:"revelation", name:"Revelation", chapters:22}
     ];
 
-    const STORAGE_KEY = 'bible-tracker';
     let state = { selectedBookId: 'genesis', readState: {} };
-    try { const saved = localStorage.getItem(STORAGE_KEY); if (saved) state = JSON.parse(saved); } catch(e){}
 
     // DOM refs
     const booksList = document.getElementById('booksList');
@@ -1114,11 +1337,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const exportBtn = document.getElementById('exportBtn');
     const importFile = document.getElementById('importFile');
 
-    function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function saveState(){ /* no-op: state kept in memory; server is source of truth */ }
 
     function getBookProgress(bookId){
       const b = BOOKS.find(b=>b.id===bookId);
-      const readCount = Object.keys(state.readState[bookId]||{}).length;
+      const readCount = Object.keys(readingProgressMap[bookId]||{}).length;
       const pct = Math.round(readCount / b.chapters *100);
       return { readCount, total:b.chapters, pct };
     }
@@ -1145,7 +1368,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(bookMeta) bookMeta.textContent = `${prog.readCount} / ${prog.total} chapters — ${prog.pct}%`;
 
       for(let i=1;i<=book.chapters;i++){
-        const read = !!(state.readState[book.id] && state.readState[book.id][i]);
+        const read = !!(readingProgressMap[book.id] && readingProgressMap[book.id][i]);
         if(filter==='read' && !read) continue;
         if(filter==='unread' && read) continue;
         const btn = document.createElement('button');
@@ -1156,31 +1379,90 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    function toggleChapter(bookId,ch){
-      state.readState[bookId] = state.readState[bookId]||{};
-      if(state.readState[bookId][ch]) delete state.readState[bookId][ch];
-      else state.readState[bookId][ch] = true;
-      saveState(); render();
+    async function toggleChapter(bookId,ch){
+      try { requireAuth(); } catch { return; }
+      const client = getSupabaseClient();
+      if (!client || !supabaseUser) return;
+      const currentlyRead = !!(readingProgressMap[bookId] && readingProgressMap[bookId][ch]);
+      if (currentlyRead) {
+        const { error } = await client
+          .from('reading_progress')
+          .delete()
+          .eq('user_id', supabaseUser.id)
+          .eq('book', bookId)
+          .eq('chapter', ch);
+        if (error) {
+          alert(`Could not update progress: ${error.message}`);
+          return;
+        }
+      } else {
+        const { error } = await client
+          .from('reading_progress')
+          .upsert([{ user_id: supabaseUser.id, book: bookId, chapter: ch, is_read: true }], { onConflict: 'user_id,book,chapter' });
+        if (error) {
+          alert(`Could not update progress: ${error.message}`);
+          return;
+        }
+      }
+      await loadReadingProgress();
+      render();
     }
 
-    if(markAllBtn) markAllBtn.onclick = ()=>{
+    if(markAllBtn) markAllBtn.onclick = async ()=>{
+      try { requireAuth(); } catch { return; }
+      const client = getSupabaseClient();
+      if (!client || !supabaseUser) return;
       const b = BOOKS.find(b=>b.id===state.selectedBookId);
-      state.readState[b.id] = {};
-      for(let i=1;i<=b.chapters;i++) state.readState[b.id][i]=true;
-      saveState(); render();
+      const rows = [];
+      for(let i=1;i<=b.chapters;i++) rows.push({ user_id: supabaseUser.id, book: b.id, chapter: i, is_read: true });
+      const { error } = await client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' });
+      if (error) { alert(`Could not mark all: ${error.message}`); return; }
+      await loadReadingProgress();
+      render();
     };
 
-    if(clearBtn) clearBtn.onclick = ()=>{ delete state.readState[state.selectedBookId]; saveState(); render(); };
+    if(clearBtn) clearBtn.onclick = async ()=>{
+      try { requireAuth(); } catch { return; }
+      const client = getSupabaseClient();
+      if (!client || !supabaseUser) return;
+      const bookId = state.selectedBookId;
+      const { error } = await client
+        .from('reading_progress')
+        .delete()
+        .eq('user_id', supabaseUser.id)
+        .eq('book', bookId);
+      if (error) { alert(`Could not clear: ${error.message}`); return; }
+      await loadReadingProgress();
+      render();
+    };
 
     if(exportBtn) exportBtn.onclick = ()=>{
-      const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+      const blob = new Blob([JSON.stringify(readingProgressMap,null,2)],{type:'application/json'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download='bible-progress.json'; a.click(); URL.revokeObjectURL(url);
     };
 
     if(importFile) importFile.onchange = (e)=>{
       const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
-      reader.onload = ev=>{ state = JSON.parse(ev.target.result); saveState(); render(); e.target.value=''; };
+      reader.onload = async ev=>{
+        try { requireAuth(); } catch { return; }
+        const imported = JSON.parse(ev.target.result);
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return;
+        const rows = [];
+        Object.entries(imported || {}).forEach(([book, chapters]) => {
+          Object.keys(chapters || {}).forEach(ch => {
+            rows.push({ user_id: supabaseUser.id, book, chapter: Number(ch), is_read: true });
+          });
+        });
+        if (rows.length) {
+          const { error } = await client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' });
+          if (error) { alert(`Import failed: ${error.message}`); return; }
+        }
+        await loadReadingProgress();
+        render();
+        e.target.value='';
+      };
       reader.readAsText(file);
     };
 
@@ -1194,7 +1476,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function renderOverall(){
       const total = BOOKS.reduce((sum,b)=>sum+b.chapters,0);
-      const read = BOOKS.reduce((sum,b)=>sum+(Object.keys(state.readState[b.id]||{}).length),0);
+      const read = BOOKS.reduce((sum,b)=>sum+(Object.keys(readingProgressMap[b.id]||{}).length),0);
       const pct = Math.round(read/total*100);
       if(overallFill) overallFill.style.width = pct + '%';
       if(overallText) overallText.textContent = `${read} / ${total} chapters`;
@@ -1209,6 +1491,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     const planView = document.getElementById('plans-view');
     const homeView = document.getElementById('home-view');
     const verseCard = document.getElementById('verse');
+    const adminView = document.getElementById('admin-view');
+    const adminUsers = document.getElementById('adminUsers');
+    const adminReading = document.getElementById('adminReading');
+    const adminQuiz = document.getElementById('adminQuiz');
+    const statUsers = document.getElementById('statUsers');
+    const statReading = document.getElementById('statReading');
+    const statQuiz = document.getElementById('statQuiz');
+    const roleUserIdInput = document.getElementById('roleUserId');
+    const roleSelect = document.getElementById('roleSelect');
+    const roleUpdateBtn = document.getElementById('roleUpdateBtn');
+    const roleUpdateStatus = document.getElementById('roleUpdateStatus');
+
+    function copyText(text) {
+      if (!text) return;
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(()=>showToast('Copied user_id'), ()=>showToast('Copy failed', true));
+      } else {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+          showToast('Copied user_id');
+        } catch {
+          showToast('Copy failed', true);
+        }
+      }
+    }
+
+    function setRoleStatus(message, isError = false) {
+      if (roleUpdateStatus) {
+        roleUpdateStatus.textContent = message;
+        roleUpdateStatus.classList.toggle('warn', !!isError);
+      }
+    }
 
     function setActiveNav(nav) {
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -1217,6 +1532,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function showBooks(){
+      try { requireAuth(); } catch { return; }
       if(homeView) homeView.hidden = true;
       if(booksSidebar) booksSidebar.hidden = false;
       if(booksView) booksView.hidden = false;
@@ -1226,11 +1542,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function showPlans(){
+      try { requireAuth(); } catch { return; }
       if(homeView) homeView.hidden = true;
       if(booksSidebar) booksSidebar.hidden = true;
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = false;
       if(verseCard) verseCard.hidden = true;
+      if(adminView) adminView.hidden = true;
       setActiveNav('plans');
     }
 
@@ -1240,7 +1558,101 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
+      if(adminView) adminView.hidden = true;
       setActiveNav('home');
+    }
+
+    async function showAdmin(){
+      try { requireAuth(); } catch { return; }
+      if (!isAdmin()) { alert('Admin only'); return; }
+      if(homeView) homeView.hidden = true;
+      if(booksSidebar) booksSidebar.hidden = true;
+      if(booksView) booksView.hidden = true;
+      if(planView) planView.hidden = true;
+      if(verseCard) verseCard.hidden = true;
+      if(adminView) adminView.hidden = false;
+      setActiveNav('admin');
+      setRoleStatus('');
+      await loadAdminData();
+    }
+
+    async function loadAdminData(){
+      const client = getSupabaseClient();
+      if (!client || !supabaseUser) return;
+      const [{ count: userCount }, { count: rpCount }, { count: quizCount }] = await Promise.all([
+        client.from('user_roles').select('*', { count: 'exact', head: true }),
+        client.from('reading_progress').select('*', { count: 'exact', head: true }),
+        client.from('quiz_submissions').select('*', { count: 'exact', head: true })
+      ]).then(res => res.map(r => r || {}));
+
+      if (statUsers) statUsers.textContent = userCount ?? '-';
+      if (statReading) statReading.textContent = rpCount ?? '-';
+      if (statQuiz) statQuiz.textContent = quizCount ?? '-';
+
+      const [{ data: usersData }, { data: rpData }, { data: quizData }] = await Promise.all([
+        client.from('user_roles').select('user_id, role, created_at').order('created_at', { ascending: false }).limit(10),
+        client.from('reading_progress').select('user_id, book, chapter, updated_at').order('updated_at', { ascending: false }).limit(10),
+        client.from('quiz_submissions').select('user_id, quiz_id, score, created_at').order('created_at', { ascending: false }).limit(10)
+      ]);
+
+      if (adminUsers) {
+        adminUsers.innerHTML = '';
+        (usersData||[]).forEach(u=>{
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <div>
+              <div class="small muted">${u.user_id.slice(0,6)}…</div>
+              <div>role: ${u.role}</div>
+            </div>
+            <button class="btn tiny" data-copy-user="${u.user_id}">Copy user_id</button>
+          `;
+          adminUsers.appendChild(li);
+        });
+        adminUsers.querySelectorAll('button[data-copy-user]').forEach(btn => {
+          btn.addEventListener('click', () => copyText(btn.dataset.copyUser));
+        });
+      }
+
+      if (adminReading) {
+        adminReading.innerHTML = '';
+        (rpData||[]).forEach(r=>{
+          const li = document.createElement('li');
+          li.textContent = `${r.user_id.slice(0,6)} • ${r.book} ${r.chapter}`;
+          adminReading.appendChild(li);
+        });
+      }
+
+      if (adminQuiz) {
+        adminQuiz.innerHTML = '';
+        (quizData||[]).forEach(q=>{
+          const li = document.createElement('li');
+          li.textContent = `${q.user_id.slice(0,6)} • ${q.quiz_id} • score: ${q.score ?? ''}`;
+          adminQuiz.appendChild(li);
+        });
+      }
+    }
+
+    async function updateUserRole() {
+      try { requireAuth(); } catch { return; }
+      if (!isAdmin()) { alert('Admin only'); return; }
+      const targetId = roleUserIdInput?.value?.trim();
+      const role = roleSelect?.value || 'user';
+      if (!targetId) {
+        setRoleStatus('Enter a user_id to update.', true);
+        return;
+      }
+      const client = getSupabaseClient();
+      if (!client) return;
+      setRoleStatus('Updating…', false);
+      const { error } = await client.rpc('set_user_role', { target_user_id: targetId, new_role: role });
+      if (error) {
+        setRoleStatus(`Update failed: ${error.message}`, true);
+        showToast('Role update failed', true);
+        return;
+      }
+      setRoleStatus('Role updated. Refreshing list…', false);
+      showToast('Role updated');
+      await loadAdminData();
     }
 
     // Bottom navigation listeners
@@ -1251,9 +1663,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         else if (nav === 'books') { showBooks(); render(); }
         else if (nav === 'plans') showPlans();
         else if (nav === 'discover') { alert('Discover coming soon'); }
+        else if (nav === 'admin') { showAdmin(); }
         else if (nav === 'more') { alert('More coming soon'); }
       });
     });
+
+    if (roleUpdateBtn) roleUpdateBtn.addEventListener('click', updateUserRole);
 
     // Initialize to Home view
     showHome();
