@@ -28,11 +28,123 @@ document.addEventListener("DOMContentLoaded", async () => {
     { title: 'Prayer Night Every Wednesday', priority: 'low', tag: 'Prayer', date: '2026-01-03' },
   ];
 
-  const sermonsSeed = [
-    { title: 'Hope in Uncertain Times', speaker: 'Ps. Grace Lee', youtubeId: 'hY7m5jjJ9mM', date: '2025-12-12' },
-    { title: 'Walking by Faith', speaker: 'Ps. Daniel Kim', youtubeId: 'kxopViU98Xo', date: '2025-12-05' },
-    { title: 'The Gift of Peace', speaker: 'Ps. Maria Santos', youtubeId: 'LXb3EKWsInQ', date: '2025-11-28' },
+  // YouTube Channel ID for FCM Liverpool
+  // Using channel handle instead of ID to ensure we get the right channel
+  const YOUTUBE_CHANNEL_HANDLE = '@FCMLiverpool';
+  const YOUTUBE_API_KEY = 'AIzaSyAqYp-nOQ2B9qQjgSSgGtKIz8hmU0H1bag'; // from Google Cloud Console
+  
+  let sermonsSeed = [
+    { title: 'Hope in Uncertain Times', speaker: 'FCM Liverpool', youtubeId: 'hY7m5jjJ9mM', date: '2025-12-12' },
+    { title: 'Walking by Faith', speaker: 'FCM Liverpool', youtubeId: 'kxopViU98Xo', date: '2025-12-05' },
+    { title: 'The Gift of Peace', speaker: 'FCM Liverpool', youtubeId: 'LXb3EKWsInQ', date: '2025-11-28' },
   ];
+
+  // Fetch latest sermons from YouTube
+  async function fetchLatestSermons() {
+    // If no API key set, use fallback data
+    if (YOUTUBE_API_KEY === 'YOUR_API_KEY') {
+      console.warn('YouTube API key not configured. Using fallback sermon data.');
+      return;
+    }
+
+    try {
+      console.log('🔍 Fetching sermons from YouTube...');
+      
+      // First, get the channel ID from the handle
+      const channelResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&q=${YOUTUBE_CHANNEL_HANDLE}&type=channel&part=snippet&maxResults=1`
+      );
+      
+      if (!channelResponse.ok) {
+        throw new Error(`Failed to find channel: ${channelResponse.status}`);
+      }
+      
+      const channelData = await channelResponse.json();
+      console.log('📡 Channel search response:', channelData);
+      
+      if (!channelData.items || channelData.items.length === 0) {
+        // Try direct search for videos from the channel name
+        console.log('🔍 Trying direct video search for FCM Liverpool...');
+        const directResponse = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&q=FCM+Liverpool+sermon&type=video&order=date&maxResults=6&part=snippet`
+        );
+        
+        if (!directResponse.ok) {
+          throw new Error(`Direct search failed: ${directResponse.status}`);
+        }
+        
+        const directData = await directResponse.json();
+        console.log('📦 Direct search response:', directData);
+        
+        if (directData.items && directData.items.length > 0) {
+          sermonsSeed = directData.items.map(item => {
+            const videoId = item.id?.videoId || item.id;
+            return {
+              title: item.snippet?.title || 'Untitled',
+              speaker: 'FCM Liverpool',
+              youtubeId: typeof videoId === 'string' ? videoId : '',
+              date: new Date(item.snippet?.publishedAt).toLocaleDateString('en-GB', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit' 
+              })
+            };
+          }).filter(sermon => sermon.youtubeId);
+          
+          console.log('✅ Loaded latest sermons from YouTube:', sermonsSeed);
+          renderSermons();
+          return;
+        }
+      }
+      
+      const channelId = channelData.items[0].snippet.channelId;
+      console.log('📺 Channel ID found:', channelId);
+      
+      // Now fetch videos from that channel
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&channelId=${channelId}&part=snippet,id&order=date&maxResults=6&type=video`
+      );
+      
+      console.log('📡 Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('YouTube API Error:', errorData);
+        throw new Error(`YouTube API returned ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
+      }
+      
+      const data = await response.json();
+      console.log('📦 YouTube API response:', data);
+      console.log('📦 Items in response:', data.items);
+      console.log('📦 Number of items:', data.items?.length);
+      
+      if (data.items && data.items.length > 0) {
+        console.log('📦 First item structure:', data.items[0]);
+        
+        sermonsSeed = data.items.map(item => {
+          const videoId = item.id?.videoId || item.id;
+          return {
+            title: item.snippet?.title || 'Untitled',
+            speaker: 'FCM Liverpool',
+            youtubeId: typeof videoId === 'string' ? videoId : '',
+            date: new Date(item.snippet?.publishedAt).toLocaleDateString('en-GB', { 
+              year: 'numeric', 
+              month: '2-digit', 
+              day: '2-digit' 
+            })
+          };
+        }).filter(sermon => sermon.youtubeId);
+        
+        console.log('✅ Loaded latest sermons from YouTube:', sermonsSeed);
+        renderSermons();
+      } else {
+        console.warn('⚠️ No videos found in response. Full response:', JSON.stringify(data, null, 2));
+      }
+    } catch (error) {
+      console.error('❌ Could not fetch latest sermons from YouTube:', error);
+      console.log('Using fallback sermon data');
+    }
+  }
 
   const postsSeed = [
     { author: 'Alicia', content: 'Loved today’s message on hope. Let’s pray for our city.', time: '2h ago' },
@@ -310,6 +422,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderPosts();
       renderKids();
       renderQuiz();
+      
+      // Fetch latest sermons from YouTube
+      fetchLatestSermons();
 
       if (kidsUpload) {
         kidsUpload.addEventListener('change', (e)=>{
