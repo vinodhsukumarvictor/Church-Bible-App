@@ -25,8 +25,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const authFirst = document.getElementById('authFirst');
   const authLast = document.getElementById('authLast');
   const authUsername = document.getElementById('authUsername');
-  const loginBtn = document.getElementById('loginBtn');
-  const signupBtn = document.getElementById('signupBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const userBadge = document.getElementById('userBadge');
   const adminNavBtn = document.querySelector('[data-nav="admin"]');
@@ -445,51 +443,52 @@ document.addEventListener("DOMContentLoaded", async () => {
       userBadge.textContent = loggedIn ? (supabaseUser.email || 'User') : 'Guest';
     }
     if (logoutBtn) logoutBtn.hidden = !loggedIn;
-    if (loginBtn) loginBtn.hidden = loggedIn;
-    if (signupBtn) signupBtn.hidden = loggedIn;
     if (adminNavBtn) adminNavBtn.hidden = !(loggedIn && isAdmin());
     if (loggedIn) hideAuthModal();
   }
 
   const authRedirectTo = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
 
-  async function handleLogin(email) {
+  async function handleMagicLink(email, meta = {}) {
     const client = getSupabaseClient();
     if (!client) return alert('Supabase not configured.');
     if (!email) return alert('Email is required.');
-    const { error } = await client.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: authRedirectTo }
-    });
-    if (error) {
-      alert(`Login link failed: ${error.message}`);
-      return;
-    }
-    alert('Check your email for a login link. After clicking it, return here.');
-  }
-
-  async function handleSignup(email, meta = {}) {
-    const client = getSupabaseClient();
-    if (!client) return alert('Supabase not configured.');
-    if (!email) return alert('Email is required.');
-    const cleanMeta = {
-      first_name: meta.first_name?.trim() || undefined,
-      last_name: meta.last_name?.trim() || undefined,
-      username: meta.username?.trim() || undefined,
-      full_name: [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || undefined
-    };
-    const { error } = await client.auth.signUp({
-      email,
-      options: {
-        data: cleanMeta,
-        emailRedirectTo: authRedirectTo
+    
+    // Check if profile fields are filled (indicates new user signup intent)
+    const hasProfileData = meta.first_name || meta.last_name || meta.username;
+    
+    if (hasProfileData) {
+      // New user flow: use signUp with metadata
+      const cleanMeta = {
+        first_name: meta.first_name?.trim() || undefined,
+        last_name: meta.last_name?.trim() || undefined,
+        username: meta.username?.trim() || undefined,
+        full_name: [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || undefined
+      };
+      const { error } = await client.auth.signUp({
+        email,
+        options: {
+          data: cleanMeta,
+          emailRedirectTo: authRedirectTo
+        }
+      });
+      if (error) {
+        alert(`Magic link failed: ${error.message}`);
+        return;
       }
-    });
-    if (error) {
-      alert(`Signup failed: ${error.message}`);
-      return;
+      alert('Check your email for a magic link to complete signup!');
+    } else {
+      // Existing user flow: use OTP
+      const { error } = await client.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: authRedirectTo }
+      });
+      if (error) {
+        alert(`Magic link failed: ${error.message}`);
+        return;
+      }
+      alert('Check your email for a magic link to sign in!');
     }
-    alert('We sent you a magic link. Open it to finish creating your account.');
   }
 
   async function handleLogout() {
@@ -980,11 +979,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (authOverlay) authOverlay.removeAttribute('hidden');
       }
 
-      if (loginBtn) loginBtn.addEventListener('click', async ()=>{
-        await handleLogin(authEmail?.value?.trim());
-      });
-      if (signupBtn) signupBtn.addEventListener('click', async ()=>{
-        await handleSignup(authEmail?.value?.trim(), {
+      const magicLinkBtn = document.getElementById('magicLinkBtn');
+      if (magicLinkBtn) magicLinkBtn.addEventListener('click', async ()=>{
+        await handleMagicLink(authEmail?.value?.trim(), {
           first_name: authFirst?.value,
           last_name: authLast?.value,
           username: authUsername?.value

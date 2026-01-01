@@ -49,6 +49,19 @@ body {
 /* simple hidden helper for [hidden] attribute */
 [hidden] { display: none !important; }
 
+/* Auth modal sections */
+.auth-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.auth-section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 /* --- Site Header --- */
 .site-header { 
   max-width: 100%;

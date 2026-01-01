@@ -318,22 +318,30 @@
   <div id="authModal" class="modal" hidden>
     <div class="modal-content">
       <h3>Sign in / Sign up</h3>
-      <p class="small muted">Enter your email to receive a magic link. On first signup, add your name and username.</p>
-      <label>Email
-        <input id="authEmail" type="email" placeholder="you@example.com" />
-      </label>
-      <label>First name (new users)
-        <input id="authFirst" type="text" placeholder="First" />
-      </label>
-      <label>Last name (new users)
-        <input id="authLast" type="text" placeholder="Last" />
-      </label>
-      <label>Username (new users)
-        <input id="authUsername" type="text" placeholder="your_handle" />
-      </label>
+      <p class="small muted">We'll send you a magic link via email—no password needed.</p>
+      
+      <div class="auth-section">
+        <p class="eyebrow">All users</p>
+        <label>Email
+          <input id="authEmail" type="email" placeholder="you@example.com" required />
+        </label>
+      </div>
+
+      <div class="auth-section">
+        <p class="eyebrow">New users only (existing users: leave these blank)</p>
+        <label>First name
+          <input id="authFirst" type="text" placeholder="First name" />
+        </label>
+        <label>Last name
+          <input id="authLast" type="text" placeholder="Last name" />
+        </label>
+        <label>Username
+          <input id="authUsername" type="text" placeholder="Choose a username" />
+        </label>
+      </div>
+
       <div class="modal-actions">
-        <button id="loginBtn" class="btn primary">Send login link</button>
-        <button id="signupBtn" class="btn">Create account (magic link)</button>
+        <button id="magicLinkBtn" class="btn primary">Send Magic Link</button>
         <button id="logoutBtn" class="btn warn" hidden>Logout</button>
       </div>
     </div>
