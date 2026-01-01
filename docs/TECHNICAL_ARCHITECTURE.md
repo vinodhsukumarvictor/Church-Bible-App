@@ -1,5 +1,7 @@
 # Technical Architecture & Implementation Guide
 
+> **Note:** This document describes the **future enterprise architecture** using Next.js, Vercel, and full-stack patterns. For the **current deployed PWA architecture** (Netlify + Supabase + vanilla JS), see the root `README.md` and `netlify.toml`. This serves as a roadmap for migration and expansion.
+
 ## 🏗️ System Architecture Overview
 
 ```

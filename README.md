@@ -1,58 +1,68 @@
 # Bible Reader PWA
 
 ## Overview
-Bible Reader is a Progressive Web App (PWA) designed to help users track the chapters they have read in the Bible. The app provides a user-friendly interface to mark chapters as read, view overall progress, and manage reading lists.
+Bible Reader is a PWA for tracking Bible reading with offline support, Supabase-backed kids uploads, optional web push, and YouTube sermon pulls.
 
 ## Features
-- Track chapters read across multiple books of the Bible.
-- Visual progress indicators including a donut chart and progress bar.
-- Options to mark all chapters as read or clear the current book.
-- Import and export reading progress in JSON format.
-- Responsive design for use on various devices.
+- Reading tracker: chapter progress, canonical/chronological plans, import/export JSON.
+- Kids gallery: uploads stored in Supabase `kids-zone` (private), admin approve/delete, signed URLs for viewing.
+- Push notifications: Netlify functions (`subscribe`, `sendPush`) using VAPID keys and Supabase `push_subscriptions` table.
+- YouTube sermons: fetch latest from `@FCMLiverpool` when `YOUTUBE_API_KEY` is set; fallback data otherwise.
+- PWA: offline cache via `service-worker.js`, installable manifest.
 
 ## Project Structure
 ```
-bible-reader
-├── index.html          # Main HTML document
-├── manifest.webmanifest # Metadata for PWA
-├── service-worker.js   # Service worker for offline functionality
-├── script.js           # JavaScript logic for the app
-├── style.css           # Styles for the app
-├── icons               # Directory for app icons
-│   └── .gitkeep        # Placeholder for version control
-├── data                # Directory for data files
-│   ├── reading-plan-canonical.json      # 365-day canonical reading plan (Genesis → Revelation)
-│   └── reading-plan-chronological.json  # 365-day commercial chronological reading plan
-├── package.json        # npm configuration file
-└── README.md           # Project documentation
+.
+├── index.html
+├── script.js                # UI logic, Supabase client, push subscription, plans
+├── service-worker.js        # Cache + push handlers
+├── style.css
+├── data/                    # Reading plan JSON, verses
+├── netlify/functions/       # subscribe.js, sendPush.js
+├── scripts/write-env.js     # Writes public-env.js from env vars
+├── docs/                    # Architecture, setup, roadmaps (moved here)
+├── netlify.toml             # Build/publish config (esbuild for functions)
+└── README.md
 ```
 
-## Setup Instructions
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd bible-reader
-   ```
+## Environment Variables
+Configure in Netlify (Build & deploy → Environment) and locally before builds:
+- `SUPABASE_URL` (client + functions)
+- `SUPABASE_ANON_KEY` (client)
+- `SUPABASE_SERVICE_ROLE_KEY` (functions only; keep secret)
+- `VAPID_PUBLIC_KEY` (client + functions)
+- `VAPID_PRIVATE_KEY` (functions only; keep secret)
+- `YOUTUBE_API_KEY` (client; optional, enables live sermons)
 
-2. Install dependencies (if any):
-   ```
-   npm install
-   ```
+## Install & Run
+```
+npm install
+npm run build    # generates public-env.js from env vars
+npm start        # serves the app (http-server) on localhost
+```
+Ensure env vars are set in your shell before `npm run build` so `public-env.js` is populated.
 
-3. Open `index.html` in a web browser to run the app.
+## Deploy (Netlify)
+- `netlify.toml`: build `npm run build`, publish `.`; functions bundled from `netlify/functions` with esbuild.
+- Add the env vars above in Site settings → Build & deploy → Environment.
+- Trigger a deploy; confirm `/.netlify/functions/subscribe` and `/.netlify/functions/sendPush` return 200.
 
-## Usage
-- Use the sidebar to navigate through different books of the Bible.
-- Click on chapters to mark them as read.
-- Use the controls to mark all chapters as read, clear the current book, or import/export your reading progress.
+## Push Test
+After deploy and with subscriptions saved, run:
+```
+$body='{"title":"Test push","body":"Hello","url":"/"}'
+Invoke-RestMethod -Method Post -Uri "https://<site>.netlify.app/.netlify/functions/sendPush" -ContentType "application/json" -Body $body
+```
+Expected: `{ "sent": N, "failed": 0 }` (failed > 0 means stale endpoints removed).
 
-## PWA Features
-- The app can be installed on devices for offline access.
-- Service worker caches resources for offline functionality.
-- Manifest file provides metadata for installation and display.
+## Docs
+Supporting docs live in `docs/`:
+- `docs/TECHNICAL_ARCHITECTURE.md`, `docs/ARCHITECTURE_DIAGRAMS.md`
+- `docs/IMPLEMENTATION_CHECKLIST.md`, `docs/IMPLEMENTATION_ROADMAP.md`
+- `docs/NOTIFICATIONS_SETUP.md`, `docs/SUPABASE_SETUP.md`, `docs/QUICK_START_GUIDE.md`, `docs/FEATURE_COMPARISON.md`, `docs/ENTERPRISE_DEVELOPMENT_PLAN.md`
 
 ## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any suggestions or improvements.
+PRs welcome. Do not commit secrets; use env vars and `public-env.js` for safe public values.
 
 ## License
-This project is licensed under the MIT License.
+MIT

@@ -105,6 +105,15 @@
               <label class="btn small-btn" for="kidsUpload">Upload</label>
               <input id="kidsUpload" type="file" accept="image/*" class="sr" aria-label="Upload kids artwork">
             </div>
+            <div class="kids-meta">
+              <div id="kidsStatus" class="small muted">Sign in to upload kids artwork.</div>
+              <div class="kids-actions">
+                <button id="kidsLoginBtn" class="btn small-btn">Sign in</button>
+                <button id="kidsLogoutBtn" class="btn small-btn" hidden>Sign out</button>
+                <button id="kidsRefreshBtn" class="btn small-btn" hidden>Refresh</button>
+              </div>
+            </div>
+            <div id="kidsAdminHint" class="pill pill-high" hidden>Admin: approve or delete uploads below.</div>
             <div id="kidsGallery" class="kids-grid"></div>
           </section>
 
@@ -295,6 +304,8 @@
   </nav>
 
   <script src="data/embedded-plans.js"></script>
+  <script src="public-env.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="script.js"></script>
   <script>
     if ("serviceWorker" in navigator) {

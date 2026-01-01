@@ -11,6 +11,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const homePosts = document.getElementById('homePosts');
   const kidsGallery = document.getElementById('kidsGallery');
   const kidsUpload = document.getElementById('kidsUpload');
+  const kidsStatus = document.getElementById('kidsStatus');
+  const kidsLoginBtn = document.getElementById('kidsLoginBtn');
+  const kidsLogoutBtn = document.getElementById('kidsLogoutBtn');
+  const kidsRefreshBtn = document.getElementById('kidsRefreshBtn');
+  const kidsAdminHint = document.getElementById('kidsAdminHint');
   const quizQuestionEl = document.getElementById('quizQuestion');
   const quizOptionsEl = document.getElementById('quizOptions');
   const quizFeedbackEl = document.getElementById('quizFeedback');
@@ -31,7 +36,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // YouTube Channel ID for FCM Liverpool
   // Using channel handle instead of ID to ensure we get the right channel
   const YOUTUBE_CHANNEL_HANDLE = '@FCMLiverpool';
-  const YOUTUBE_API_KEY = 'AIzaSyAqYp-nOQ2B9qQjgSSgGtKIz8hmU0H1bag'; // from Google Cloud Console
+  const YOUTUBE_API_KEY = window.YOUTUBE_API_KEY || 'YOUR_API_KEY';
   
   let sermonsSeed = [
     { title: 'Hope in Uncertain Times', speaker: 'FCM Liverpool', youtubeId: 'hY7m5jjJ9mM', date: '2025-12-12' },
@@ -158,28 +163,423 @@ document.addEventListener("DOMContentLoaded", async () => {
     { q: 'Who led Israel after Moses?', options: ['Joshua', 'Caleb', 'Samuel', 'Saul'], answer: 0 },
   ];
 
-  const kidsStorageKey = 'kidsGallery:v1';
   const quizStorageKey = 'quizProgress:v1';
 
-  function loadKidsGallery() {
+  // Supabase config (fill in your project URL and anon key; leave as-is for local preview)
+  const SUPABASE_URL = window.SUPABASE_URL || 'https://bthurnklynjzchcvxcur.supabase.co';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_YKEcgIUqXuY7P0rhZLmiXg_GJvvewjo';
+  const SUPABASE_BUCKET = 'kids-zone';
+  let supabaseClient = null;
+  let supabaseUser = null;
+  let supabaseProfile = null;
+  let kidsGalleryData = [];
+  let kidsBackendMode = 'local'; // 'local' fallback, 'supabase' when pulling from backend
+  let kidsLoading = false;
+
+  // Web push configuration (replace VAPID key; subscribe URL already points to Netlify function)
+  const VAPID_PUBLIC_KEY = window.VAPID_PUBLIC_KEY || 'BMOe1X6kVj174Ojwy6--1Qvl3D7d5bkJEerbI2DlRnUU_oqH7_zLPXw8xVvQo3AT9ZWp9JXHDebPKFFvvsug8Ds';
+  const PUSH_SUBSCRIBE_URL = '/.netlify/functions/subscribe';
+  const pushPromptKey = 'pushPrompted:v1';
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  };
+
+  async function saveSubscription(subscription) {
+    try { localStorage.setItem('pushSubscription', JSON.stringify(subscription)); } catch (_) {}
+    if (!PUSH_SUBSCRIBE_URL || PUSH_SUBSCRIBE_URL.includes('your-edge-function-or-api')) return;
     try {
-      const saved = localStorage.getItem(kidsStorageKey);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn('kids gallery load failed', e);
+      await fetch(PUSH_SUBSCRIBE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription })
+      });
+    } catch (err) {
+      console.warn('push subscription send failed', err);
     }
-    return [
-      { title: 'Nativity craft', child: 'Ella (8)', src: null },
-      { title: 'Rainbow promise', child: 'Micah (6)', src: null },
-      { title: 'Noah’s ark', child: 'Leah (10)', src: null },
-    ];
   }
 
-  function saveKidsGallery(arr) {
-    try { localStorage.setItem(kidsStorageKey, JSON.stringify(arr)); } catch (e) { console.warn('kids gallery save failed', e); }
+  async function subscribeToPush(registration) {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      await saveSubscription(existing);
+      return existing;
+    }
+    if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.startsWith('REPLACE_WITH')) {
+      console.warn('Set VAPID_PUBLIC_KEY to enable push.');
+      return null;
+    }
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+    await saveSubscription(subscription);
+    return subscription;
   }
 
-  let kidsGalleryData = loadKidsGallery();
+  async function initPush() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    const registration = await navigator.serviceWorker.ready;
+    if (Notification.permission === 'granted') {
+      await subscribeToPush(registration);
+      return;
+    }
+    const alreadyAsked = localStorage.getItem(pushPromptKey) === '1';
+    if (Notification.permission === 'default' && !alreadyAsked) {
+      const result = await Notification.requestPermission();
+      localStorage.setItem(pushPromptKey, '1');
+      if (result === 'granted') {
+        await subscribeToPush(registration);
+      }
+    }
+  }
+
+  initPush().catch(err => console.warn('push init failed', err));
+
+  const kidsSample = [
+    { title: 'Nativity craft', child: 'Ella (8)', signedUrl: null, approved: true },
+    { title: 'Rainbow promise', child: 'Micah (6)', signedUrl: null, approved: true },
+    { title: 'Noah’s ark', child: 'Leah (10)', signedUrl: null, approved: true }
+  ];
+  kidsGalleryData = kidsSample.slice();
+
+  function supabaseConfigured() {
+    return !!SUPABASE_URL && !!SUPABASE_ANON_KEY && !SUPABASE_URL.includes('YOUR_SUPABASE_PROJECT') && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE_ANON_KEY');
+  }
+
+  function isAdmin() {
+    return supabaseProfile && (supabaseProfile.role === 'admin' || supabaseProfile.role === 'super_admin');
+  }
+
+  function setKidsStatus(message, isError = false) {
+    if (kidsStatus) {
+      kidsStatus.textContent = message;
+      kidsStatus.classList.toggle('warn', isError);
+    }
+  }
+
+  function getSupabaseClient() {
+    if (!supabaseConfigured()) return null;
+    if (!window.supabase) {
+      console.warn('Supabase JS not loaded');
+      return null;
+    }
+    if (supabaseClient) return supabaseClient;
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+      supabaseUser = session?.user || null;
+      supabaseProfile = await fetchProfile();
+      updateKidsAuthUI();
+      refreshKidsFromSupabase();
+    });
+    return supabaseClient;
+  }
+
+  async function fetchProfile() {
+    const client = getSupabaseClient();
+    if (!client || !supabaseUser) return null;
+    const { data, error } = await client
+      .from('profiles')
+      .select('role, full_name')
+      .eq('id', supabaseUser.id)
+      .maybeSingle();
+    if (error) {
+      console.warn('Could not load profile', error);
+      return null;
+    }
+    return data || null;
+  }
+
+  async function refreshSession() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { data, error } = await client.auth.getSession();
+    if (error) {
+      console.warn('Session fetch failed', error);
+      return;
+    }
+    supabaseUser = data?.session?.user || null;
+    supabaseProfile = supabaseUser ? await fetchProfile() : null;
+    updateKidsAuthUI();
+  }
+
+  function updateKidsAuthUI() {
+    const configured = supabaseConfigured();
+    const loggedIn = !!supabaseUser;
+    if (kidsUpload) kidsUpload.disabled = !configured || !loggedIn || kidsLoading;
+    if (kidsLoginBtn) kidsLoginBtn.hidden = !configured || loggedIn;
+    if (kidsLogoutBtn) kidsLogoutBtn.hidden = !loggedIn;
+    if (kidsRefreshBtn) kidsRefreshBtn.hidden = !configured;
+    if (kidsAdminHint) kidsAdminHint.hidden = !(loggedIn && isAdmin());
+
+    if (!configured) {
+      setKidsStatus('Supabase URL/anon key not set. Using local sample gallery.', false);
+      return;
+    }
+    if (kidsLoading) {
+      setKidsStatus('Loading uploads…', false);
+      return;
+    }
+    if (loggedIn) {
+      const name = supabaseProfile?.full_name || supabaseUser.email || 'Signed in';
+      setKidsStatus(`${name} — uploads visible per your role.`, false);
+    } else {
+      setKidsStatus('Sign in to upload (uploads stay hidden until approved).', false);
+    }
+  }
+
+  async function refreshKidsFromSupabase(showErrors = false) {
+    const client = getSupabaseClient();
+    if (!client) {
+      kidsBackendMode = 'local';
+      kidsGalleryData = kidsSample.slice();
+      renderKids();
+      return;
+    }
+
+    kidsLoading = true;
+    updateKidsAuthUI();
+
+    const { data: uploads, error } = await client
+      .from('kids_uploads')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (showErrors) setKidsStatus(`Could not load uploads: ${error.message}`, true);
+      kidsBackendMode = 'local';
+      kidsGalleryData = kidsSample.slice();
+      kidsLoading = false;
+      renderKids();
+      return;
+    }
+
+    let urlMap = {};
+    const paths = uploads.map(u => u.file_path).filter(Boolean);
+    if (paths.length) {
+      const { data: signed, error: signedErr } = await client
+        .storage
+        .from(SUPABASE_BUCKET)
+        .createSignedUrls(paths, 3600);
+
+      if (!signedErr && signed) {
+        urlMap = Object.fromEntries(signed.map(item => [item.path, item.signedUrl]));
+      } else if (signedErr && showErrors) {
+        console.warn('Signed URL generation failed', signedErr);
+      }
+    }
+
+    kidsGalleryData = uploads.map(u => ({
+      ...u,
+      signedUrl: urlMap[u.file_path] || null
+    }));
+    kidsBackendMode = 'supabase';
+    kidsLoading = false;
+    renderKids();
+
+    if (supabaseUser) {
+      setKidsStatus(kidsGalleryData.length ? 'Uploads fetched from Supabase.' : 'Signed in. No uploads yet.', false);
+    }
+  }
+
+  async function handleKidsLogin() {
+    const client = getSupabaseClient();
+    if (!client) {
+      alert('Set SUPABASE_URL and SUPABASE_ANON_KEY first.');
+      return;
+    }
+    const email = prompt('Email for Supabase login (create user in Supabase Auth)');
+    if (!email) return;
+    const password = prompt('Password');
+    if (!password) return;
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (error) {
+      alert(`Login failed: ${error.message}`);
+      return;
+    }
+    await refreshSession();
+    await refreshKidsFromSupabase(true);
+  }
+
+  async function handleKidsLogout() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    await client.auth.signOut();
+    supabaseUser = null;
+    supabaseProfile = null;
+    kidsBackendMode = 'local';
+    kidsGalleryData = kidsSample.slice();
+    updateKidsAuthUI();
+    renderKids();
+  }
+
+  async function handleKidsUpload(file) {
+    const client = getSupabaseClient();
+    if (!client) {
+      alert('Supabase not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY.');
+      return;
+    }
+    if (!supabaseUser) {
+      alert('Please sign in before uploading.');
+      return;
+    }
+
+    const path = `${supabaseUser.id}/${Date.now()}-${file.name}`;
+
+    const { error: uploadError } = await client.storage
+      .from(SUPABASE_BUCKET)
+      .upload(path, file, {
+        upsert: false,
+        metadata: { approved: 'false', kind: file.type || 'image' }
+      });
+
+    if (uploadError) {
+      alert(`Upload failed: ${uploadError.message}`);
+      return;
+    }
+
+    const { error: insertError } = await client
+      .from('kids_uploads')
+      .insert({
+        user_id: supabaseUser.id,
+        file_path: path,
+        kind: file.type || 'image',
+        approved: false
+      });
+
+    if (insertError) {
+      await client.storage.from(SUPABASE_BUCKET).remove([path]);
+      alert(`Could not save upload record: ${insertError.message}`);
+      return;
+    }
+
+    setKidsStatus('Upload received. Pending admin approval.', false);
+    await refreshKidsFromSupabase(true);
+  }
+
+  async function approveKidsUpload(id, filePath) {
+    if (!isAdmin()) {
+      alert('Only admins can approve.');
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    const download = await client.storage.from(SUPABASE_BUCKET).download(filePath);
+    if (download.error) {
+      alert(`Failed to download object for approval: ${download.error.message}`);
+      return;
+    }
+
+    const reupload = await client.storage.from(SUPABASE_BUCKET).update(filePath, download.data, {
+      upsert: true,
+      metadata: { approved: 'true' }
+    });
+
+    if (reupload.error) {
+      alert(`Could not stamp approval metadata: ${reupload.error.message}`);
+      return;
+    }
+
+    const { error: updateError } = await client
+      .from('kids_uploads')
+      .update({ approved: true, approved_at: new Date().toISOString(), approved_by: supabaseUser?.id || null })
+      .eq('id', id);
+
+    if (updateError) {
+      alert(`Could not mark approved: ${updateError.message}`);
+      return;
+    }
+
+    await refreshKidsFromSupabase(true);
+  }
+
+  async function deleteKidsUpload(id, filePath) {
+    if (!isAdmin()) {
+      alert('Only admins can delete uploads.');
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    const { error: removeError } = await client.storage.from(SUPABASE_BUCKET).remove([filePath]);
+    if (removeError) {
+      alert(`Storage delete failed: ${removeError.message}`);
+      return;
+    }
+
+    const { error: deleteError } = await client.from('kids_uploads').delete().eq('id', id);
+    if (deleteError) {
+      alert(`DB delete failed: ${deleteError.message}`);
+    }
+    await refreshKidsFromSupabase(true);
+  }
+
+  function renderKids() {
+    if (!kidsGallery) return;
+    kidsGallery.innerHTML = '';
+
+    if (!kidsGalleryData.length) {
+      kidsGallery.innerHTML = '<p class="small muted">No uploads yet.</p>';
+      return;
+    }
+
+    kidsGalleryData.forEach((k) => {
+      const card = document.createElement('article');
+      card.className = 'kid-card';
+      const placeholder = `<div class="kid-placeholder">🎨</div>`;
+      const media = k.signedUrl ? `<img src="${k.signedUrl}" alt="${k.title || 'Kids upload'}" loading="lazy">` : placeholder;
+      const displayTitle = k.title || (k.file_path ? k.file_path.split('/').pop() : 'Kids upload');
+      const ownerLabel = kidsBackendMode === 'supabase'
+        ? (k.user_id === supabaseUser?.id ? 'Uploaded by you' : 'Uploaded by community')
+        : (k.child || 'Parent upload');
+
+      const badges = [];
+      if (kidsBackendMode === 'supabase' && !k.approved) badges.push('<span class="kid-badge pending">Pending</span>');
+      if (kidsBackendMode === 'supabase' && k.user_id === supabaseUser?.id) badges.push('<span class="kid-badge mine">Yours</span>');
+
+      const actions = [];
+      if (kidsBackendMode === 'supabase' && isAdmin()) {
+        if (!k.approved) actions.push(`<button class="btn tiny" data-approve="${k.id}" data-path="${k.file_path}">Approve</button>`);
+        actions.push(`<button class="btn tiny warn" data-delete="${k.id}" data-path="${k.file_path}">Delete</button>`);
+      }
+
+      card.innerHTML = `
+        ${media}
+        <div class="kid-body">
+          ${badges.length ? `<div class="kid-badges">${badges.join('')}</div>` : ''}
+          <p class="item-title">${displayTitle}</p>
+          <p class="small muted">${ownerLabel}${k.approved === false && kidsBackendMode === 'supabase' && !isAdmin() ? ' — pending review' : ''}</p>
+          ${actions.length ? `<div class="kid-actions">${actions.join('')}</div>` : ''}
+        </div>
+      `;
+
+      card.querySelectorAll('button[data-approve]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = Number(btn.dataset.approve);
+          const path = btn.dataset.path;
+          await approveKidsUpload(targetId, path);
+        });
+      });
+
+      card.querySelectorAll('button[data-delete]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = Number(btn.dataset.delete);
+          const path = btn.dataset.path;
+          if (confirm('Delete this upload?')) {
+            await deleteKidsUpload(targetId, path);
+          }
+        });
+      });
+
+      kidsGallery.appendChild(card);
+    });
+  }
 
   function renderAnnouncements() {
     if (!homeAnnouncements) return;
@@ -228,45 +628,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       `;
       homePosts.appendChild(card);
     });
-  }
-
-  function renderKids() {
-    if (!kidsGallery) return;
-    kidsGallery.innerHTML = '';
-    kidsGalleryData.forEach((k, idx) => {
-      const card = document.createElement('article');
-      card.className = 'kid-card';
-      const placeholder = `<div class="kid-placeholder">🎨</div>`;
-      const media = k.src ? `<img src="${k.src}" alt="${k.title}" loading="lazy">` : placeholder;
-      card.innerHTML = `
-        ${media}
-        <div class="kid-body">
-          <p class="item-title">${k.title}</p>
-          <p class="small muted">${k.child}</p>
-          <button class="btn tiny" data-remove="${idx}">Remove</button>
-        </div>
-      `;
-      kidsGallery.appendChild(card);
-    });
-
-    kidsGallery.querySelectorAll('button[data-remove]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const i = Number(btn.dataset.remove);
-        kidsGalleryData.splice(i, 1);
-        saveKidsGallery(kidsGalleryData);
-        renderKids();
-      });
-    });
-  }
-
-  function handleKidsUpload(file) {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      kidsGalleryData.unshift({ title: file.name || 'New upload', child: 'Parent upload', src: ev.target.result });
-      saveKidsGallery(kidsGalleryData);
-      renderKids();
-    };
-    reader.readAsDataURL(file);
   }
 
   function renderQuiz() {
@@ -420,8 +781,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderAnnouncements();
       renderSermons();
       renderPosts();
-      renderKids();
       renderQuiz();
+
+      updateKidsAuthUI();
+      await refreshSession();
+      await refreshKidsFromSupabase(true);
+
+      // Fallback render (supabase fetch also renders)
+      renderKids();
       
       // Fetch latest sermons from YouTube
       fetchLatestSermons();
@@ -433,6 +800,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           e.target.value = '';
         });
       }
+      if (kidsLoginBtn) kidsLoginBtn.addEventListener('click', handleKidsLogin);
+      if (kidsLogoutBtn) kidsLogoutBtn.addEventListener('click', handleKidsLogout);
+      if (kidsRefreshBtn) kidsRefreshBtn.addEventListener('click', () => refreshKidsFromSupabase(true));
 
       // full plan toggle
       if (fullPlanToggle && fullPlanEl) {

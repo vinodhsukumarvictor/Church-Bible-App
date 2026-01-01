@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env*
+public-env.js
+secrets.txt
+*.key
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+*.log
+
+# Build outputs
+dist/
+build/
+.netlify/
+.vercel/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+README.old
