@@ -15,4 +15,8 @@ const lines = Object.entries(env)
   .join('\n');
 
 fs.writeFileSync(outPath, `${lines}\n`, 'utf8');
-console.log(`Wrote ${outPath}`);
+
+// Silent success - no logging to avoid Netlify secret scanner false positives
+process.exit(0);
+
+
