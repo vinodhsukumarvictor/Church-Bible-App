@@ -65,4 +65,6 @@ Supporting docs live in `docs/`:
 PRs welcome. Do not commit secrets; use env vars and `public-env.js` for safe public values.
 
 ## License
-MIT
+MIT License - Copyright (c) 2026 Faith Church Ministries / Vinodh Sukumar Victor
+
+See [LICENSE](LICENSE) for full text.
