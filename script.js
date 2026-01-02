@@ -1,8 +1,4 @@
 document.addEventListener("DOMContentLoaded", async () => {
-  // Language preference
-  let userLanguage = 'english';
-  const languageSelect = document.getElementById('languageSelect');
-  
   const readingList = document.getElementById("reading-list");
   const progressText = document.getElementById("progress");
   const completedList = document.getElementById("completed-days");
@@ -23,31 +19,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const quizQuestionEl = document.getElementById('quizQuestion');
   const quizOptionsEl = document.getElementById('quizOptions');
   const quizFeedbackEl = document.getElementById('quizFeedback');
-  const authModal = document.getElementById('authModal');
-  const authOverlay = document.getElementById('authOverlay');
-  const authEmail = document.getElementById('authEmail');
-  const authFirst = document.getElementById('authFirst');
-  const authLast = document.getElementById('authLast');
-  const authUsername = document.getElementById('authUsername');
-  const logoutBtn = document.getElementById('logoutBtn');
-  const greetingEl = document.getElementById('greeting');
-  const profileNameEl = document.getElementById('profileName');
-  const profileEmailEl = document.getElementById('profileEmail');
-  const profileDropdownEl = document.getElementById('profileDropdown');
-  const profileLogoutBtn = document.getElementById('profileLogoutBtn');
-  const userBadge = document.getElementById('userBadge');
-  const adminNavBtn = document.querySelector('[data-nav="admin"]');
 
   const startOfYear = new Date(new Date().getFullYear(), 0, 1);
   const today = new Date();
   const dayOfYear = Math.floor((today - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
 
   let readingPlan = {};
-  let readingProgressMap = {}; // { book: { chapter: true } }
-
-  const normalizeBook = (book) => (book || '').toLowerCase();
-
-  let supabaseRole = 'user';
+  let completedDays = JSON.parse(localStorage.getItem("completedDays") || "[]");
 
   const announcementsSeed = [
     { title: 'Christmas Service Schedule', priority: 'high', tag: 'Services', date: '2025-12-24' },
@@ -187,14 +165,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const quizStorageKey = 'quizProgress:v1';
 
-  // Supabase config - must be set via environment variables
-  const SUPABASE_URL = window.SUPABASE_URL || '';
-  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+  // Supabase config (fill in your project URL and anon key; leave as-is for local preview)
+  const SUPABASE_URL = window.SUPABASE_URL || 'https://bthurnklynjzchcvxcur.supabase.co';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_YKEcgIUqXuY7P0rhZLmiXg_GJvvewjo';
   const SUPABASE_BUCKET = 'kids-zone';
   let supabaseClient = null;
   let supabaseUser = null;
   let supabaseProfile = null;
-  let supabaseRoleRow = null;
   let kidsGalleryData = [];
   let kidsBackendMode = 'local'; // 'local' fallback, 'supabase' when pulling from backend
   let kidsLoading = false;
@@ -276,106 +253,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function isAdmin() {
-    const role = supabaseProfile?.role || supabaseRoleRow?.role || supabaseRole;
-    return role === 'admin' || role === 'super_admin';
-  }
-
-  function requireAuth() {
-    if (!supabaseUser) {
-      if (authModal) authModal.removeAttribute('hidden');
-      if (authOverlay) authOverlay.removeAttribute('hidden');
-      throw new Error('Auth required');
-    }
-  }
-
-  function hideAuthModal() {
-    if (authModal) authModal.setAttribute('hidden', 'true');
-    if (authOverlay) authOverlay.setAttribute('hidden', 'true');
-  }
-
-  function showToast(message, isError = false) {
-    const el = document.getElementById('toast');
-    if (!el) return;
-    el.textContent = message;
-    el.classList.toggle('warn', !!isError);
-    el.classList.add('show');
-    el.hidden = false;
-    clearTimeout(el._timer);
-    el._timer = setTimeout(() => {
-      el.classList.remove('show');
-      el._timer = setTimeout(() => { el.hidden = true; }, 250);
-    }, 2200);
-  }
-
-  async function fetchUserRoleRow() {
-    const client = getSupabaseClient();
-    if (!client || !supabaseUser) return null;
-    const { data, error } = await client
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', supabaseUser.id)
-      .maybeSingle();
-    if (error) {
-      console.warn('Could not load user role', error);
-      return null;
-    }
-    return data || null;
-  }
-
-  async function loadReadingProgress() {
-    const client = getSupabaseClient();
-    if (!client || !supabaseUser) return;
-    const { data, error } = await client
-      .from('reading_progress')
-      .select('book, chapter, is_read')
-      .eq('user_id', supabaseUser.id);
-    if (error) {
-      console.warn('Could not load reading progress', error);
-      readingProgressMap = {};
-      return;
-    }
-    const map = {};
-    (data || []).forEach(row => {
-      const b = normalizeBook(row.book);
-      if (!map[b]) map[b] = {};
-      if (row.is_read) map[b][row.chapter] = true;
-    });
-    readingProgressMap = map;
-  }
-
-  async function ensureProfileAndRole(meta = {}) {
-    const client = getSupabaseClient();
-    if (!client || !supabaseUser) return;
-    
-    // Check for pending profile metadata from signup
-    let pendingMeta = {};
-    try {
-      const stored = localStorage.getItem('pendingProfileMeta');
-      if (stored) {
-        pendingMeta = JSON.parse(stored);
-        localStorage.removeItem('pendingProfileMeta');
-      }
-    } catch (e) {
-      console.warn('Could not retrieve pending profile metadata', e);
-    }
-    
-    // Merge metadata sources: passed in, pending localStorage, user_metadata
-    const profilePayload = {
-      id: supabaseUser.id,
-      username: meta.username || pendingMeta.username || supabaseUser.user_metadata?.username || undefined,
-      first_name: meta.first_name || pendingMeta.first_name || supabaseUser.user_metadata?.first_name || undefined,
-      last_name: meta.last_name || pendingMeta.last_name || supabaseUser.user_metadata?.last_name || undefined,
-      full_name: meta.full_name || pendingMeta.full_name || [
-        meta.first_name || pendingMeta.first_name || supabaseUser.user_metadata?.first_name || '', 
-        meta.last_name || pendingMeta.last_name || supabaseUser.user_metadata?.last_name || ''
-      ].join(' ').trim() || null
-    };
-    await client.from('profiles').upsert(profilePayload, { onConflict: 'id' });
-    // Ensure user role exists
-    const { data: roleRow } = await client.from('user_roles').select('role').eq('user_id', supabaseUser.id).maybeSingle();
-    if (!roleRow) {
-      await client.from('user_roles').upsert({ user_id: supabaseUser.id, role: 'user' });
-    }
+    return supabaseProfile && (supabaseProfile.role === 'admin' || supabaseProfile.role === 'super_admin');
   }
 
   function setKidsStatus(message, isError = false) {
@@ -395,13 +273,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     supabaseClient.auth.onAuthStateChange(async (_event, session) => {
       supabaseUser = session?.user || null;
-      if (supabaseUser) await ensureProfileAndRole();
-      supabaseProfile = supabaseUser ? await fetchProfile() : null;
-      supabaseRoleRow = supabaseUser ? await fetchUserRoleRow() : null;
-      if (supabaseUser) await loadReadingProgress();
+      supabaseProfile = await fetchProfile();
       updateKidsAuthUI();
       refreshKidsFromSupabase();
-      updateAuthUI();
     });
     return supabaseClient;
   }
@@ -431,11 +305,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     supabaseUser = data?.session?.user || null;
     supabaseProfile = supabaseUser ? await fetchProfile() : null;
-    supabaseRoleRow = supabaseUser ? await fetchUserRoleRow() : null;
-    if (supabaseUser) await ensureProfileAndRole();
-    if (supabaseUser) await loadReadingProgress();
     updateKidsAuthUI();
-    updateAuthUI();
   }
 
   function updateKidsAuthUI() {
@@ -461,98 +331,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       setKidsStatus('Sign in to upload (uploads stay hidden until approved).', false);
     }
-  }
-
-  function updateAuthUI() {
-    const loggedIn = !!supabaseUser;
-    const userName = supabaseProfile?.first_name || supabaseUser?.user_metadata?.first_name || 'User';
-    const userInitial = userName.charAt(0).toUpperCase();
-    
-    // Update greeting
-    const hour = new Date().getHours();
-    const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    if (greetingEl) {
-      greetingEl.textContent = loggedIn ? `${greeting}, ${userName}` : greeting;
-    }
-    
-    // Update profile badge
-    if (userBadge) {
-      userBadge.textContent = loggedIn ? userInitial : '?';
-      userBadge.title = loggedIn ? userName : 'Guest';
-    }
-    
-    // Update profile dropdown
-    if (profileNameEl) {
-      profileNameEl.textContent = loggedIn ? userName : 'Guest';
-    }
-    if (profileEmailEl) {
-      profileEmailEl.textContent = loggedIn ? (supabaseUser.email || '') : '';
-    }
-    if (profileLogoutBtn) {
-      profileLogoutBtn.hidden = !loggedIn;
-    }
-    
-    if (adminNavBtn) adminNavBtn.hidden = !(loggedIn && isAdmin());
-    if (loggedIn) hideAuthModal();
-  }
-
-  const authRedirectTo = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
-
-  async function handleMagicLink(email, meta = {}) {
-    const client = getSupabaseClient();
-    if (!client) return alert('Supabase not configured.');
-    if (!email) return alert('Email is required.');
-    
-    // Store profile metadata in localStorage to apply after successful auth
-    const hasProfileData = meta.first_name || meta.last_name || meta.username;
-    if (hasProfileData) {
-      const cleanMeta = {
-        first_name: meta.first_name?.trim() || undefined,
-        last_name: meta.last_name?.trim() || undefined,
-        username: meta.username?.trim() || undefined,
-        full_name: [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || undefined
-      };
-      try {
-        localStorage.setItem('pendingProfileMeta', JSON.stringify(cleanMeta));
-      } catch (e) {
-        console.warn('Could not save profile metadata', e);
-      }
-    }
-    
-    console.log('Sending magic link to:', email);
-    console.log('Redirect URL:', authRedirectTo);
-    
-    // Always use OTP for passwordless auth (works for both new and existing users)
-    const { data, error } = await client.auth.signInWithOtp({
-      email,
-      options: { 
-        emailRedirectTo: authRedirectTo,
-        shouldCreateUser: true
-      }
-    });
-    
-    if (error) {
-      console.error('Magic link error:', error);
-      alert(`Magic link failed: ${error.message}`);
-      return;
-    }
-    
-    console.log('Magic link response:', data);
-    alert(hasProfileData 
-      ? 'Check your email for a magic link to complete signup! (Check spam folder too)' 
-      : 'Check your email for a magic link to sign in! (Check spam folder too)');
-  }
-
-  async function handleLogout() {
-    const client = getSupabaseClient();
-    if (!client) return;
-    await client.auth.signOut();
-    supabaseUser = null;
-    supabaseProfile = null;
-    supabaseRoleRow = null;
-    readingProgressMap = {};
-    updateAuthUI();
-    updateKidsAuthUI();
   }
 
   async function refreshKidsFromSupabase(showErrors = false) {
@@ -868,17 +646,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         quizFeedbackEl.textContent = correct ? 'Correct! 🎉' : 'Try again.';
         quizFeedbackEl.classList.toggle('ok', correct);
         quizFeedbackEl.classList.toggle('warn', !correct);
-        try { requireAuth(); } catch { return; }
-        const client = getSupabaseClient();
-        if (!client || !supabaseUser) return;
-        client.from('quiz_submissions').insert({
-          user_id: supabaseUser.id,
-          quiz_id: `daily-${dayOfYear}`,
-          answers: { selected: optIdx, correctAnswer: item.answer },
-          score: correct ? 1 : 0
-        }).then(({ error }) => {
-          if (error) console.warn('Quiz submission failed', error);
-        });
+        try { localStorage.setItem(quizStorageKey, JSON.stringify({ day: dayOfYear, correct })); } catch (e) { /* ignore */ }
       });
       quizOptionsEl.appendChild(btn);
     });
@@ -889,14 +657,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // lets the user mark the day completed and keeps history in localStorage.
 
   (async function () {
-    function getPlanFiles(lang) {
-      return {
-        canonical: `data/reading-plan-canonical-${lang}.json`,
-        chronological: `data/reading-plan-chronological-${lang}.json`
-      };
-    }
-    
-    let planFiles = getPlanFiles(userLanguage);
+    const planFiles = {
+      canonical: 'data/reading-plan-canonical.json',
+      chronological: 'data/reading-plan-chronological.json'
+    };
 
   let plans = { canonical: null, chronological: null };
   const planSelect = document.getElementById('planSelect');
@@ -917,27 +681,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       return Math.floor(diff / oneDay);
     }
 
-    function isChapterRead(book, chapter) {
-      const b = normalizeBook(book);
-      return !!(readingProgressMap[b] && readingProgressMap[b][chapter]);
-    }
-
-    function dayIsComplete(planName, day) {
-      const plan = plans[planName];
-      const entries = plan ? plan[String(day)] : null;
-      if (!entries || entries.length === 0) return false;
-      return entries.every(e => isChapterRead(e.book, e.chapter));
+    function storageKey(planName) {
+      return `completedDays:${planName}`;
     }
 
     function loadCompleted(planName) {
-      const plan = plans[planName];
-      if (!plan) return [];
-      const keys = Object.keys(plan).map(n => Number(n)).filter(n => !isNaN(n));
-      const done = [];
-      for (const k of keys) {
-        if (dayIsComplete(planName, k)) done.push(k);
+      try {
+        const raw = localStorage.getItem(storageKey(planName));
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
       }
-      return done.sort((a,b)=>a-b);
+    }
+
+    function saveCompleted(planName, arr) {
+      localStorage.setItem(storageKey(planName), JSON.stringify(arr));
     }
 
     async function fetchPlan(name) {
@@ -951,8 +709,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         console.warn('embedded plans check failed', ex);
       }
 
-      // Use language-specific plan files
-      planFiles = getPlanFiles(userLanguage);
       const url = planFiles[name];
       // Try fetch first (works when served over http).
       try {
@@ -992,7 +748,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       planSelect.addEventListener('change', async () => {
         const planName = getSelectedPlan();
-        state.activePlan = planName;  // Update active plan in state
         const ok = await ensurePlanLoaded(planName);
         if (!ok) {
           showPlanStatus('Failed to load plan. See console.');
@@ -1005,11 +760,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderSelectedDay();
         renderHistory();
         if (fullPlanEl && !fullPlanEl.hidden) renderFullPlan();
-        // Update Bible tab if it's currently visible
-        if (!booksView?.hidden) {
-          await updatePlanReadings();
-          render();
-        }
       });
       if (daySelect) daySelect.addEventListener('change', ()=>{ renderSelectedDay(); });
       markBtn.addEventListener('click', markCompleted);
@@ -1036,35 +786,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateKidsAuthUI();
       await refreshSession();
       await refreshKidsFromSupabase(true);
-      updateAuthUI();
 
-      if (!supabaseUser) {
-        if (authModal) authModal.removeAttribute('hidden');
-        if (authOverlay) authOverlay.removeAttribute('hidden');
-      }
-
-      const magicLinkBtn = document.getElementById('magicLinkBtn');
-      if (magicLinkBtn) magicLinkBtn.addEventListener('click', async ()=>{
-        await handleMagicLink(authEmail?.value?.trim(), {
-          first_name: authFirst?.value,
-          last_name: authLast?.value,
-          username: authUsername?.value
-        });
-      });
-    if (profileLogoutBtn) profileLogoutBtn.addEventListener('click', handleLogout);
-    if (userBadge) {
-      userBadge.addEventListener('click', () => {
-        if (profileDropdownEl) {
-          profileDropdownEl.hidden = !profileDropdownEl.hidden;
-        }
-      });
-    }
-    if (authOverlay) authOverlay.addEventListener('click', hideAuthModal);    // Close profile dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-      if (profileDropdownEl && !e.target.closest('.profile-menu-wrapper')) {
-        profileDropdownEl.hidden = true;
-      }
-    });
+      // Fallback render (supabase fetch also renders)
+      renderKids();
       
       // Fetch latest sermons from YouTube
       fetchLatestSermons();
@@ -1179,34 +903,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function markCompleted() {
-      try { requireAuth(); } catch { return; }
-      const client = getSupabaseClient();
-      if (!client || !supabaseUser) return;
       const planName = getSelectedPlan();
       const day = daySelect ? Number(daySelect.value) : dayOfYear();
-      const plan = plans[planName];
-      const entries = plan ? plan[String(day)] : null;
-      if (!entries || entries.length === 0) {
-        alert('No reading assigned for this day.');
-        return;
+      const completed = loadCompleted(planName);
+      if (!completed.includes(day)) {
+        completed.push(day);
+        completed.sort((a, b) => a - b);
+        saveCompleted(planName, completed);
       }
-      const rows = entries.map(e => ({
-        user_id: supabaseUser.id,
-        book: normalizeBook(e.book),
-        chapter: e.chapter,
-        is_read: true
-      }));
-      client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' })
-        .then(async ({ error }) => {
-          if (error) {
-            alert(`Could not save progress: ${error.message}`);
-            return;
-          }
-          await loadReadingProgress();
-          renderHistory();
-          renderSelectedDay();
-          render();
-        });
+      renderHistory();
     }
 
     function renderHistory() {
@@ -1276,9 +981,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     async function loadVerseOfTheDay() {
       try {
-        // Load verses based on selected language
-        const lang = userLanguage || 'english';
-        const res = await fetch(`data/verses-${lang}.json`);
+        // Try loading the large local verses file (365 entries)
+        const res = await fetch('data/verses.json');
         if (res.ok) {
           const verses = await res.json();
           const day = dayOfYear();
@@ -1294,23 +998,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       } catch (e) {
         // fall through to fallback sample
-        console.warn(`Could not load data/verses-${userLanguage}.json, falling back to sample verses.`, e);
+        console.warn('Could not load data/verses.json, falling back to sample verses.', e);
       }
 
       // Fallback: small local sample (keeps app functional if file is missing)
       try {
-        const lang = userLanguage || 'english';
-        const sampleEn = [
+        const sample = [
           { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
           { text: "Your word is a lamp to my feet and a light to my path.", ref: "Psalm 119:105" },
           { text: "For God so loved the world, that he gave his only Son.", ref: "John 3:16" }
         ];
-        const sampleTa = [
-          { text: "கர்த்தர் என் மேய்ப்பராயிருக்கிறார்; நான் தாழ்ச்சியடையேன்.", ref: "சங்கீதம் 23:1" },
-          { text: "தேவன் தம்முடைய ஒரேபேறான குமாரனை விசுவாசிக்கிறவன் எவனோ அவன் கெட்டுப்போகாமல் நித்தியஜீவனை அடையும்படிக்கு, அவரைத் தந்தருளி, இவ்வளவாய் உலகத்தில் அன்புகூர்ந்தார்.", ref: "யோவான் 3:16" },
-          { text: "என்னைப் பலப்படுத்துகிற கிறிஸ்துவினாலே எல்லாவற்றையும் செய்யவல்லவனாயிருக்கிறேன்.", ref: "பிலிப்பியர் 4:13" }
-        ];
-        const sample = lang === 'tamil' ? sampleTa : sampleEn;
         const pick = sample[Math.floor(Math.random() * sample.length)];
         const verseText = document.getElementById('verse-text');
         const verseRef = document.getElementById('verse-ref');
@@ -1331,9 +1028,78 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- Books module (original bible-reader features) ---
   (function(){
-    let BOOKS = []; // Will be loaded based on language
-    
-    let state = { selectedBookId: 'genesis', readState: {}, activePlan: 'canonical' };
+    const BOOKS = [
+      {id:"genesis", name:"Genesis", chapters:50},
+      {id:"exodus", name:"Exodus", chapters:40},
+      {id:"leviticus", name:"Leviticus", chapters:27},
+      {id:"numbers", name:"Numbers", chapters:36},
+      {id:"deuteronomy", name:"Deuteronomy", chapters:34},
+      {id:"joshua", name:"Joshua", chapters:24},
+      {id:"judges", name:"Judges", chapters:21},
+      {id:"ruth", name:"Ruth", chapters:4},
+      {id:"1-samuel", name:"1 Samuel", chapters:31},
+      {id:"2-samuel", name:"2 Samuel", chapters:24},
+      {id:"1-kings", name:"1 Kings", chapters:22},
+      {id:"2-kings", name:"2 Kings", chapters:25},
+      {id:"1-chronicles", name:"1 Chronicles", chapters:29},
+      {id:"2-chronicles", name:"2 Chronicles", chapters:36},
+      {id:"ezra", name:"Ezra", chapters:10},
+      {id:"nehemiah", name:"Nehemiah", chapters:13},
+      {id:"esther", name:"Esther", chapters:10},
+      {id:"job", name:"Job", chapters:42},
+      {id:"psalms", name:"Psalms", chapters:150},
+      {id:"proverbs", name:"Proverbs", chapters:31},
+      {id:"ecclesiastes", name:"Ecclesiastes", chapters:12},
+      {id:"song-of-solomon", name:"Song of Solomon", chapters:8},
+      {id:"isaiah", name:"Isaiah", chapters:66},
+      {id:"jeremiah", name:"Jeremiah", chapters:52},
+      {id:"lamentations", name:"Lamentations", chapters:5},
+      {id:"ezekiel", name:"Ezekiel", chapters:48},
+      {id:"daniel", name:"Daniel", chapters:12},
+      {id:"hosea", name:"Hosea", chapters:14},
+      {id:"joel", name:"Joel", chapters:3},
+      {id:"amos", name:"Amos", chapters:9},
+      {id:"obadiah", name:"Obadiah", chapters:1},
+      {id:"jonah", name:"Jonah", chapters:4},
+      {id:"micah", name:"Micah", chapters:7},
+      {id:"nahum", name:"Nahum", chapters:3},
+      {id:"habakkuk", name:"Habakkuk", chapters:3},
+      {id:"zephaniah", name:"Zephaniah", chapters:3},
+      {id:"haggai", name:"Haggai", chapters:2},
+      {id:"zechariah", name:"Zechariah", chapters:14},
+      {id:"malachi", name:"Malachi", chapters:4},
+      {id:"matthew", name:"Matthew", chapters:28},
+      {id:"mark", name:"Mark", chapters:16},
+      {id:"luke", name:"Luke", chapters:24},
+      {id:"john", name:"John", chapters:21},
+      {id:"acts", name:"Acts", chapters:28},
+      {id:"romans", name:"Romans", chapters:16},
+      {id:"1-corinthians", name:"1 Corinthians", chapters:16},
+      {id:"2-corinthians", name:"2 Corinthians", chapters:13},
+      {id:"galatians", name:"Galatians", chapters:6},
+      {id:"ephesians", name:"Ephesians", chapters:6},
+      {id:"philippians", name:"Philippians", chapters:4},
+      {id:"colossians", name:"Colossians", chapters:4},
+      {id:"1-thessalonians", name:"1 Thessalonians", chapters:5},
+      {id:"2-thessalonians", name:"2 Thessalonians", chapters:3},
+      {id:"1-timothy", name:"1 Timothy", chapters:6},
+      {id:"2-timothy", name:"2 Timothy", chapters:4},
+      {id:"titus", name:"Titus", chapters:3},
+      {id:"philemon", name:"Philemon", chapters:1},
+      {id:"hebrews", name:"Hebrews", chapters:13},
+      {id:"james", name:"James", chapters:5},
+      {id:"1-peter", name:"1 Peter", chapters:5},
+      {id:"2-peter", name:"2 Peter", chapters:3},
+      {id:"1-john", name:"1 John", chapters:5},
+      {id:"2-john", name:"2 John", chapters:1},
+      {id:"3-john", name:"3 John", chapters:1},
+      {id:"jude", name:"Jude", chapters:1},
+      {id:"revelation", name:"Revelation", chapters:22}
+    ];
+
+    const STORAGE_KEY = 'bible-tracker';
+    let state = { selectedBookId: 'genesis', readState: {} };
+    try { const saved = localStorage.getItem(STORAGE_KEY); if (saved) state = JSON.parse(saved); } catch(e){}
 
     // DOM refs
     const booksList = document.getElementById('booksList');
@@ -1345,66 +1111,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const donutText = document.getElementById('donutText');
     const markAllBtn = document.getElementById('markAllBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importFile = document.getElementById('importFile');
 
-    async function loadBooksForLanguage(lang) {
-      try {
-        const res = await fetch(`/data/books-${lang}.json`);
-        const data = await res.json();
-        BOOKS = data.books || [];
-        console.log(`✓ Loaded ${BOOKS.length} books for language: ${lang}`);
-        return BOOKS;
-      } catch (e) {
-        console.error(`Error loading books for ${lang}:`, e);
-        return [];
-      }
-    }
-
-    function saveState(){ /* no-op: state kept in memory; server is source of truth */ }
-
-    // Helper: get readings from plan for today + missed dates
-    async function getTodayAndMissedReadings(planName = state.activePlan) {
-      try {
-        const langSuffix = userLanguage === 'tamil' ? '-ta' : '-en';
-        const res = await fetch(`/data/reading-plan-${planName}${langSuffix}.json`);
-        const plan = await res.json();
-        
-        const today = dayOfYear();
-        const readings = {};
-        
-        // Iterate from day 1 to today
-        for (let day = 1; day <= today; day++) {
-          const dayReadings = plan[String(day)];
-          if (!dayReadings) continue;
-          
-          // Check if all chapters for this day are read
-          const allRead = dayReadings.every(reading => {
-            const bookId = BOOKS.find(b => b.name === reading.book)?.id;
-            return bookId && readingProgressMap[bookId]?.[reading.chapter];
-          });
-          
-          // If any chapter is unread, include this day's readings
-          if (!allRead) {
-            dayReadings.forEach(reading => {
-              readings[reading.book] = readings[reading.book] || [];
-              readings[reading.book].push(reading.chapter);
-            });
-          }
-        }
-        return readings;
-      } catch (e) {
-        console.error('Error fetching plan:', e);
-        return {};
-      }
-    }
-
-    // Update plan readings in state (called when loading Bible tab or changing plan)
-    async function updatePlanReadings() {
-      state.planReadings = await getTodayAndMissedReadings();
-    }
+    function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
     function getBookProgress(bookId){
       const b = BOOKS.find(b=>b.id===bookId);
-      const readCount = Object.keys(readingProgressMap[bookId]||{}).length;
+      const readCount = Object.keys(state.readState[bookId]||{}).length;
       const pct = Math.round(readCount / b.chapters *100);
       return { readCount, total:b.chapters, pct };
     }
@@ -1431,98 +1145,44 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(bookMeta) bookMeta.textContent = `${prog.readCount} / ${prog.total} chapters — ${prog.pct}%`;
 
       for(let i=1;i<=book.chapters;i++){
-        // Skip if not in plan readings
-        if (state.planReadings && !state.planReadings[book.name]?.includes(i)) continue;
-        
-        const read = !!(readingProgressMap[book.id] && readingProgressMap[book.id][i]);
+        const read = !!(state.readState[book.id] && state.readState[book.id][i]);
         if(filter==='read' && !read) continue;
         if(filter==='unread' && read) continue;
-        
-        const div = document.createElement('div');
-        div.className = 'chapter-item';
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = read;
-        checkbox.className = 'chapter-checkbox';
-        checkbox.addEventListener('change', () => toggleChapter(book.id, i));
-        
-        const label = document.createElement('label');
-        label.className = 'chapter-label';
-        label.appendChild(checkbox);
-        label.appendChild(document.createTextNode(` Chapter ${i}`));
-        
-        div.appendChild(label);
-        chaptersContainer.appendChild(div);
+        const btn = document.createElement('button');
+        btn.className = 'chapter' + (read? ' read':'');
+        btn.textContent = i;
+        btn.onclick = ()=>{ toggleChapter(book.id,i); };
+        chaptersContainer.appendChild(btn);
       }
     }
 
-    async function toggleChapter(bookId,ch){
-      try { requireAuth(); } catch { return; }
-      const client = getSupabaseClient();
-      if (!client || !supabaseUser) return;
-      const currentlyRead = !!(readingProgressMap[bookId] && readingProgressMap[bookId][ch]);
-      if (currentlyRead) {
-        const { error } = await client
-          .from('reading_progress')
-          .delete()
-          .eq('user_id', supabaseUser.id)
-          .eq('book', bookId)
-          .eq('chapter', ch);
-        if (error) {
-          alert(`Could not update progress: ${error.message}`);
-          return;
-        }
-      } else {
-        const { error } = await client
-          .from('reading_progress')
-          .upsert([{ user_id: supabaseUser.id, book: bookId, chapter: ch, is_read: true }], { onConflict: 'user_id,book,chapter' });
-        if (error) {
-          alert(`Could not update progress: ${error.message}`);
-          return;
-        }
-      }
-      await loadReadingProgress();
-      render();
+    function toggleChapter(bookId,ch){
+      state.readState[bookId] = state.readState[bookId]||{};
+      if(state.readState[bookId][ch]) delete state.readState[bookId][ch];
+      else state.readState[bookId][ch] = true;
+      saveState(); render();
     }
 
-    if(markAllBtn) markAllBtn.onclick = async ()=>{
-      try { requireAuth(); } catch { return; }
-      const client = getSupabaseClient();
-      if (!client || !supabaseUser) return;
+    if(markAllBtn) markAllBtn.onclick = ()=>{
       const b = BOOKS.find(b=>b.id===state.selectedBookId);
-      const rows = [];
-      // Only mark chapters that are in the current plan
-      const planChapters = state.planReadings?.[b.name] || [];
-      for(let i=1;i<=b.chapters;i++) {
-        if (planChapters.includes(i)) {
-          rows.push({ user_id: supabaseUser.id, book: b.id, chapter: i, is_read: true });
-        }
-      }
-      if (rows.length === 0) { showToast('No chapters to mark in this plan'); return; }
-      const { error } = await client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' });
-      if (error) { alert(`Could not mark all: ${error.message}`); return; }
-      showToast(`Marked ${rows.length} chapters as read`);
-      await loadReadingProgress();
-      render();
+      state.readState[b.id] = {};
+      for(let i=1;i<=b.chapters;i++) state.readState[b.id][i]=true;
+      saveState(); render();
     };
 
-    if(clearBtn) clearBtn.onclick = async ()=>{
-      try { requireAuth(); } catch { return; }
-      const client = getSupabaseClient();
-      if (!client || !supabaseUser) return;
-      const bookId = state.selectedBookId;
-      const { error } = await client
-        .from('reading_progress')
-        .delete()
-        .eq('user_id', supabaseUser.id)
-        .eq('book', bookId);
-      if (error) { alert(`Could not clear: ${error.message}`); return; }
-      await loadReadingProgress();
-      render();
+    if(clearBtn) clearBtn.onclick = ()=>{ delete state.readState[state.selectedBookId]; saveState(); render(); };
+
+    if(exportBtn) exportBtn.onclick = ()=>{
+      const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download='bible-progress.json'; a.click(); URL.revokeObjectURL(url);
     };
 
-
+    if(importFile) importFile.onchange = (e)=>{
+      const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
+      reader.onload = ev=>{ state = JSON.parse(ev.target.result); saveState(); render(); e.target.value=''; };
+      reader.readAsText(file);
+    };
 
     document.querySelectorAll('.filters .btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -1532,12 +1192,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
-    // Initialize first filter button as active
-    document.querySelector('.filters .btn[data-filter="all"]')?.classList.add('active');
-
     function renderOverall(){
       const total = BOOKS.reduce((sum,b)=>sum+b.chapters,0);
-      const read = BOOKS.reduce((sum,b)=>sum+(Object.keys(readingProgressMap[b.id]||{}).length),0);
+      const read = BOOKS.reduce((sum,b)=>sum+(Object.keys(state.readState[b.id]||{}).length),0);
       const pct = Math.round(read/total*100);
       if(overallFill) overallFill.style.width = pct + '%';
       if(overallText) overallText.textContent = `${read} / ${total} chapters`;
@@ -1552,39 +1209,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const planView = document.getElementById('plans-view');
     const homeView = document.getElementById('home-view');
     const verseCard = document.getElementById('verse');
-    const adminView = document.getElementById('admin-view');
-    const adminUsers = document.getElementById('adminUsers');
-    const adminReading = document.getElementById('adminReading');
-    const adminQuiz = document.getElementById('adminQuiz');
-    const statUsers = document.getElementById('statUsers');
-    const statReading = document.getElementById('statReading');
-    const statQuiz = document.getElementById('statQuiz');
-    const roleUserIdInput = document.getElementById('roleUserId');
-    const roleSelect = document.getElementById('roleSelect');
-    const roleUpdateBtn = document.getElementById('roleUpdateBtn');
-    const roleUpdateStatus = document.getElementById('roleUpdateStatus');
-
-    function copyText(text) {
-      if (!text) return;
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(text).then(()=>showToast('Copied user_id'), ()=>showToast('Copy failed', true));
-      } else {
-        try {
-          const ta = document.createElement('textarea');
-          ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-          showToast('Copied user_id');
-        } catch {
-          showToast('Copy failed', true);
-        }
-      }
-    }
-
-    function setRoleStatus(message, isError = false) {
-      if (roleUpdateStatus) {
-        roleUpdateStatus.textContent = message;
-        roleUpdateStatus.classList.toggle('warn', !!isError);
-      }
-    }
 
     function setActiveNav(nav) {
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -1593,24 +1217,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function showBooks(){
-      try { requireAuth(); } catch { return; }
       if(homeView) homeView.hidden = true;
       if(booksSidebar) booksSidebar.hidden = false;
       if(booksView) booksView.hidden = false;
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
       setActiveNav('books');
-      updatePlanReadings().then(() => render());
     }
 
     function showPlans(){
-      try { requireAuth(); } catch { return; }
       if(homeView) homeView.hidden = true;
       if(booksSidebar) booksSidebar.hidden = true;
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = false;
       if(verseCard) verseCard.hidden = true;
-      if(adminView) adminView.hidden = true;
       setActiveNav('plans');
     }
 
@@ -1620,123 +1240,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(booksView) booksView.hidden = true;
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
-      if(adminView) adminView.hidden = true;
       setActiveNav('home');
-      updateWelcomeStats();
-    }
-
-    function updateWelcomeStats() {
-      // Calculate total chapters read
-      const totalRead = Object.values(readingProgressMap).reduce((sum, book) => sum + Object.keys(book).length, 0);
-      const totalReadEl = document.getElementById('totalReadStat');
-      if (totalReadEl) totalReadEl.textContent = totalRead;
-
-      // Placeholder for streak calculation (would need dates stored)
-      const streakEl = document.getElementById('readingStreakStat');
-      if (streakEl) streakEl.textContent = '—';
-
-      // Placeholder for plans started
-      const plansEl = document.getElementById('completedPlansStat');
-      if (plansEl) plansEl.textContent = state.activePlan ? '1' : '0';
-
-      // Update welcome message
-      const welcomeMsg = document.getElementById('welcomeMessage');
-      if (welcomeMsg && supabaseProfile?.username) {
-        welcomeMsg.textContent = `Welcome back, ${supabaseProfile.username}! Ready to read today's scriptures?`;
-      }
-    }
-
-    async function showAdmin(){
-      try { requireAuth(); } catch { return; }
-      if (!isAdmin()) { alert('Admin only'); return; }
-      if(homeView) homeView.hidden = true;
-      if(booksSidebar) booksSidebar.hidden = true;
-      if(booksView) booksView.hidden = true;
-      if(planView) planView.hidden = true;
-      if(verseCard) verseCard.hidden = true;
-      if(adminView) adminView.hidden = false;
-      setActiveNav('admin');
-      setRoleStatus('');
-      await loadAdminData();
-    }
-
-    async function loadAdminData(){
-      const client = getSupabaseClient();
-      if (!client || !supabaseUser) return;
-      const [{ count: userCount }, { count: rpCount }, { count: quizCount }] = await Promise.all([
-        client.from('user_roles').select('*', { count: 'exact', head: true }),
-        client.from('reading_progress').select('*', { count: 'exact', head: true }),
-        client.from('quiz_submissions').select('*', { count: 'exact', head: true })
-      ]).then(res => res.map(r => r || {}));
-
-      if (statUsers) statUsers.textContent = userCount ?? '-';
-      if (statReading) statReading.textContent = rpCount ?? '-';
-      if (statQuiz) statQuiz.textContent = quizCount ?? '-';
-
-      const [{ data: usersData }, { data: rpData }, { data: quizData }] = await Promise.all([
-        client.from('user_roles').select('user_id, role, created_at').order('created_at', { ascending: false }).limit(10),
-        client.from('reading_progress').select('user_id, book, chapter, updated_at').order('updated_at', { ascending: false }).limit(10),
-        client.from('quiz_submissions').select('user_id, quiz_id, score, created_at').order('created_at', { ascending: false }).limit(10)
-      ]);
-
-      if (adminUsers) {
-        adminUsers.innerHTML = '';
-        (usersData||[]).forEach(u=>{
-          const li = document.createElement('li');
-          li.innerHTML = `
-            <div>
-              <div class="small muted">${u.user_id.slice(0,6)}…</div>
-              <div>role: ${u.role}</div>
-            </div>
-            <button class="btn tiny" data-copy-user="${u.user_id}">Copy user_id</button>
-          `;
-          adminUsers.appendChild(li);
-        });
-        adminUsers.querySelectorAll('button[data-copy-user]').forEach(btn => {
-          btn.addEventListener('click', () => copyText(btn.dataset.copyUser));
-        });
-      }
-
-      if (adminReading) {
-        adminReading.innerHTML = '';
-        (rpData||[]).forEach(r=>{
-          const li = document.createElement('li');
-          li.textContent = `${r.user_id.slice(0,6)} • ${r.book} ${r.chapter}`;
-          adminReading.appendChild(li);
-        });
-      }
-
-      if (adminQuiz) {
-        adminQuiz.innerHTML = '';
-        (quizData||[]).forEach(q=>{
-          const li = document.createElement('li');
-          li.textContent = `${q.user_id.slice(0,6)} • ${q.quiz_id} • score: ${q.score ?? ''}`;
-          adminQuiz.appendChild(li);
-        });
-      }
-    }
-
-    async function updateUserRole() {
-      try { requireAuth(); } catch { return; }
-      if (!isAdmin()) { alert('Admin only'); return; }
-      const targetId = roleUserIdInput?.value?.trim();
-      const role = roleSelect?.value || 'user';
-      if (!targetId) {
-        setRoleStatus('Enter a user_id to update.', true);
-        return;
-      }
-      const client = getSupabaseClient();
-      if (!client) return;
-      setRoleStatus('Updating…', false);
-      const { error } = await client.rpc('set_user_role', { target_user_id: targetId, new_role: role });
-      if (error) {
-        setRoleStatus(`Update failed: ${error.message}`, true);
-        showToast('Role update failed', true);
-        return;
-      }
-      setRoleStatus('Role updated. Refreshing list…', false);
-      showToast('Role updated');
-      await loadAdminData();
     }
 
     // Bottom navigation listeners
@@ -1747,67 +1251,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         else if (nav === 'books') { showBooks(); render(); }
         else if (nav === 'plans') showPlans();
         else if (nav === 'discover') { alert('Discover coming soon'); }
-        else if (nav === 'admin') { showAdmin(); }
         else if (nav === 'more') { alert('More coming soon'); }
       });
     });
 
-    if (roleUpdateBtn) roleUpdateBtn.addEventListener('click', updateUserRole);
-
-    // Language switching handler (defined in Books module scope but needs to affect reading plans too)
-    const originalSwitchLanguage = switchLanguage;
-    async function switchLanguage(lang) {
-      userLanguage = lang;
-      localStorage.setItem('preferredLanguage', lang);
-      
-      // Reload books for this language
-      await loadBooksForLanguage(lang);
-      
-      // Clear plans cache so they reload in new language
-      plans = { canonical: null, chronological: null };
-      planFiles = getPlanFiles(lang);
-      
-      // Refresh the current view
-      render();
-      
-      // Reload verse of the day in new language
-      await loadVerseOfTheDay();
-      
-      // If we're on the reading plan view, reload it
-      const planSelect = document.getElementById('planSelect');
-      if (planSelect && planSelect.value) {
-        await ensurePlanLoaded(planSelect.value);
-        const daySelect = document.getElementById('daySelect');
-        if (daySelect) {
-          const max = populateDays(getSelectedPlan());
-          if (max >= 1) daySelect.value = String(Math.max(1, Math.min(dayOfYear(), max)));
-        }
-        renderSelectedDay();
-        renderHistory();
-      }
-      
-      showToast(`Language changed to ${lang === 'english' ? 'English' : 'தமிழ்'}`);
-    }
-
-    if (languageSelect) {
-      languageSelect.addEventListener('change', (e) => switchLanguage(e.target.value));
-    }
-
     // Initialize to Home view
-    async function initModule() {
-      // Load user's language preference
-      const savedLang = localStorage.getItem('preferredLanguage') || 'english';
-      userLanguage = savedLang;
-      if (languageSelect) languageSelect.value = savedLang;
-      
-      // Load books for the selected language
-      await loadBooksForLanguage(userLanguage);
-      
-      showHome();
-      render();
-    }
-
-    initModule().catch(err => console.error('Module init failed:', err));
+    showHome();
+    render();
   })();
 
 });

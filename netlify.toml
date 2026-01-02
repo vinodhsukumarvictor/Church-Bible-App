@@ -2,10 +2,6 @@
   command = "npm run build"
   publish = "."
 
-[build.environment]
-  # Disable secret scanning - these are public client-safe values
-  SECRETS_SCAN_ENABLED = "false"
-
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"

@@ -48,7 +48,7 @@ exports.handler = async (event) => {
     const failures = results
       .map((r, i) => ({ r, sub: subs[i] }))
       .filter(x => x.r.status === 'rejected' && x.r.reason?.statusCode && [404, 410].includes(x.r.reason.statusCode));
-    
+
     if (failures.length) {
       const endpointsToDelete = failures.map(x => x.sub.endpoint);
       await supabase.from('push_subscriptions').delete().in('endpoint', endpointsToDelete);
