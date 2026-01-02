@@ -187,9 +187,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const quizStorageKey = 'quizProgress:v1';
 
-  // Supabase config (fill in your project URL and anon key; leave as-is for local preview)
-  const SUPABASE_URL = window.SUPABASE_URL || 'https://bthurnklynjzchcvxcur.supabase.co';
-  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_YKEcgIUqXuY7P0rhZLmiXg_GJvvewjo';
+  // Supabase config - must be set via environment variables
+  const SUPABASE_URL = window.SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   const SUPABASE_BUCKET = 'kids-zone';
   let supabaseClient = null;
   let supabaseUser = null;
