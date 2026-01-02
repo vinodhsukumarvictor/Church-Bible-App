@@ -1345,8 +1345,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const donutText = document.getElementById('donutText');
     const markAllBtn = document.getElementById('markAllBtn');
     const clearBtn = document.getElementById('clearBtn');
-    const exportBtn = document.getElementById('exportBtn');
-    const importFile = document.getElementById('importFile');
 
     async function loadBooksForLanguage(lang) {
       try {
@@ -1524,35 +1522,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       render();
     };
 
-    if(exportBtn) exportBtn.onclick = ()=>{
-      const blob = new Blob([JSON.stringify(readingProgressMap,null,2)],{type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download='bible-progress.json'; a.click(); URL.revokeObjectURL(url);
-    };
 
-    if(importFile) importFile.onchange = (e)=>{
-      const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
-      reader.onload = async ev=>{
-        try { requireAuth(); } catch { return; }
-        const imported = JSON.parse(ev.target.result);
-        const client = getSupabaseClient();
-        if (!client || !supabaseUser) return;
-        const rows = [];
-        Object.entries(imported || {}).forEach(([book, chapters]) => {
-          Object.keys(chapters || {}).forEach(ch => {
-            rows.push({ user_id: supabaseUser.id, book, chapter: Number(ch), is_read: true });
-          });
-        });
-        if (rows.length) {
-          const { error } = await client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' });
-          if (error) { alert(`Import failed: ${error.message}`); return; }
-        }
-        await loadReadingProgress();
-        render();
-        e.target.value='';
-      };
-      reader.readAsText(file);
-    };
 
     document.querySelectorAll('.filters .btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
