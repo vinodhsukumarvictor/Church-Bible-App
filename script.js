@@ -5,10 +5,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const markBtn = document.getElementById("mark-complete");
   const verseText = document.getElementById("verse-text");
   const verseRef = document.getElementById("verse-ref");
+  const verseLikeBtn = document.getElementById('verseLikeBtn');
+  const verseLikeCountEl = document.getElementById('verseLikeCount');
 
   const homeAnnouncements = document.getElementById('homeAnnouncements');
   const homeSermons = document.getElementById('homeSermons');
-  const homePosts = document.getElementById('homePosts');
+  const postsViewEl = null; // will reference posts-view when created
   const kidsGallery = document.getElementById('kidsGallery');
   const kidsUpload = document.getElementById('kidsUpload');
   const kidsStatus = document.getElementById('kidsStatus');
@@ -25,7 +27,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dayOfYear = Math.floor((today - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
 
   let readingPlan = {};
-  let completedDays = JSON.parse(localStorage.getItem("completedDays") || "[]");
+  // Do not read or persist any local data. Clear known keys and disable future writes.
+  try {
+    (function disableLocalPersistence() {
+      try {
+        const prefixes = ['completedDays:', 'bible-tracker', 'quizProgress:v1', 'pushPrompted:v1', 'pushSubscription'];
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (!k) continue;
+          if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k);
+        }
+        // Prevent further writes to localStorage in this testing environment
+        try { localStorage.setItem = function(){}; localStorage.removeItem = function(){}; localStorage.clear = function(){}; } catch(e) {}
+      } catch (e) { console.warn('Could not fully disable local persistence', e); }
+    })();
+  } catch (e) { /* ignore in environments without localStorage */ }
+  let completedDays = [];
 
   const announcementsSeed = [
     { title: 'Christmas Service Schedule', priority: 'high', tag: 'Services', date: '2025-12-24' },
@@ -46,107 +63,48 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Fetch latest sermons from YouTube
   async function fetchLatestSermons() {
-    // If no API key set, use fallback data
-    if (YOUTUBE_API_KEY === 'YOUR_API_KEY') {
-      console.warn('YouTube API key not configured. Using fallback sermon data.');
-      return;
-    }
-
+    // Prefer server-side proxy to keep the API key secret. Falls back to client-side if needed.
     try {
-      console.log('🔍 Fetching sermons from YouTube...');
-      
-      // First, get the channel ID from the handle
-      const channelResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&q=${YOUTUBE_CHANNEL_HANDLE}&type=channel&part=snippet&maxResults=1`
-      );
-      
-      if (!channelResponse.ok) {
-        throw new Error(`Failed to find channel: ${channelResponse.status}`);
+      const proxyUrl = `/.netlify/functions/fetchYouTube?handle=${encodeURIComponent(YOUTUBE_CHANNEL_HANDLE)}&max=6`;
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.items && json.items.length) {
+          // normalize to our local sermons format
+          sermonsSeed = json.items.map(i => ({ title: i.snippet?.title || 'Untitled', speaker: 'FCM Liverpool', youtubeId: i.id?.videoId || (i.id && i.id.videoId) || '', date: i.snippet?.publishedAt ? new Date(i.snippet.publishedAt).toLocaleDateString('en-GB') : '' }));
+          renderSermons();
+          return;
+        }
+      } else {
+        console.warn('YouTube proxy returned non-OK:', res.status);
       }
-      
-      const channelData = await channelResponse.json();
-      console.log('📡 Channel search response:', channelData);
-      
-      if (!channelData.items || channelData.items.length === 0) {
-        // Try direct search for videos from the channel name
-        console.log('🔍 Trying direct video search for FCM Liverpool...');
+
+      // If proxy fails and a client API key is present, fall back to client-side fetch
+      if (YOUTUBE_API_KEY && YOUTUBE_API_KEY !== 'YOUR_API_KEY') {
+        console.log('Proxy failed — falling back to client-side YouTube fetch');
+        // small, direct search for videos
         const directResponse = await fetch(
           `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&q=FCM+Liverpool+sermon&type=video&order=date&maxResults=6&part=snippet`
         );
-        
-        if (!directResponse.ok) {
-          throw new Error(`Direct search failed: ${directResponse.status}`);
-        }
-        
-        const directData = await directResponse.json();
-        console.log('📦 Direct search response:', directData);
-        
-        if (directData.items && directData.items.length > 0) {
+        if (directResponse.ok) {
+          const directData = await directResponse.json();
           sermonsSeed = directData.items.map(item => {
             const videoId = item.id?.videoId || item.id;
             return {
               title: item.snippet?.title || 'Untitled',
               speaker: 'FCM Liverpool',
               youtubeId: typeof videoId === 'string' ? videoId : '',
-              date: new Date(item.snippet?.publishedAt).toLocaleDateString('en-GB', { 
-                year: 'numeric', 
-                month: '2-digit', 
-                day: '2-digit' 
-              })
+              date: item.snippet?.publishedAt ? new Date(item.snippet.publishedAt).toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''
             };
           }).filter(sermon => sermon.youtubeId);
-          
-          console.log('✅ Loaded latest sermons from YouTube:', sermonsSeed);
           renderSermons();
           return;
         }
       }
-      
-      const channelId = channelData.items[0].snippet.channelId;
-      console.log('📺 Channel ID found:', channelId);
-      
-      // Now fetch videos from that channel
-      const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&channelId=${channelId}&part=snippet,id&order=date&maxResults=6&type=video`
-      );
-      
-      console.log('📡 Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('YouTube API Error:', errorData);
-        throw new Error(`YouTube API returned ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
-      }
-      
-      const data = await response.json();
-      console.log('📦 YouTube API response:', data);
-      console.log('📦 Items in response:', data.items);
-      console.log('📦 Number of items:', data.items?.length);
-      
-      if (data.items && data.items.length > 0) {
-        console.log('📦 First item structure:', data.items[0]);
-        
-        sermonsSeed = data.items.map(item => {
-          const videoId = item.id?.videoId || item.id;
-          return {
-            title: item.snippet?.title || 'Untitled',
-            speaker: 'FCM Liverpool',
-            youtubeId: typeof videoId === 'string' ? videoId : '',
-            date: new Date(item.snippet?.publishedAt).toLocaleDateString('en-GB', { 
-              year: 'numeric', 
-              month: '2-digit', 
-              day: '2-digit' 
-            })
-          };
-        }).filter(sermon => sermon.youtubeId);
-        
-        console.log('✅ Loaded latest sermons from YouTube:', sermonsSeed);
-        renderSermons();
-      } else {
-        console.warn('⚠️ No videos found in response. Full response:', JSON.stringify(data, null, 2));
-      }
+
+      console.log('Using fallback sermon data');
     } catch (error) {
-      console.error('❌ Could not fetch latest sermons from YouTube:', error);
+      console.error('❌ Could not fetch latest sermons from YouTube or proxy:', error);
       console.log('Using fallback sermon data');
     }
   }
@@ -165,9 +123,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const quizStorageKey = 'quizProgress:v1';
 
-  // Supabase config (fill in your project URL and anon key; leave as-is for local preview)
-  const SUPABASE_URL = window.SUPABASE_URL || 'https://bthurnklynjzchcvxcur.supabase.co';
-  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_YKEcgIUqXuY7P0rhZLmiXg_GJvvewjo';
+  // Supabase config. For production supply these via your own secure mechanism.
+  // Do NOT hardcode real keys here to avoid exposing secrets in the repo/build.
+  const SUPABASE_URL = window.SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   const SUPABASE_BUCKET = 'kids-zone';
   let supabaseClient = null;
   let supabaseUser = null;
@@ -177,7 +136,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let kidsLoading = false;
 
   // Web push configuration (replace VAPID key; subscribe URL already points to Netlify function)
-  const VAPID_PUBLIC_KEY = window.VAPID_PUBLIC_KEY || 'BMOe1X6kVj174Ojwy6--1Qvl3D7d5bkJEerbI2DlRnUU_oqH7_zLPXw8xVvQo3AT9ZWp9JXHDebPKFFvvsug8Ds';
+  const VAPID_PUBLIC_KEY = window.VAPID_PUBLIC_KEY || '';
   const PUSH_SUBSCRIBE_URL = '/.netlify/functions/subscribe';
   const pushPromptKey = 'pushPrompted:v1';
 
@@ -278,6 +237,44 @@ document.addEventListener("DOMContentLoaded", async () => {
       refreshKidsFromSupabase();
     });
     return supabaseClient;
+  }
+
+  // Verse likes: fetch and increment via Supabase RPCs
+  async function loadVerseLikes(id = 'verse_of_day') {
+    try {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data, error } = await client.rpc('get_verse_likes', { p_id: id });
+      if (error) { console.warn('get_verse_likes failed', error); return; }
+      if (data && data.length) {
+        verseLikeCountEl.textContent = String(data[0].likes || 0);
+      } else {
+        verseLikeCountEl.textContent = '0';
+      }
+    } catch (e) { console.warn('loadVerseLikes error', e); }
+  }
+
+  async function likeVerse(id = 'verse_of_day') {
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        // If not configured, do a quick optimistic increment locally
+        verseLikeCountEl.textContent = String(Number(verseLikeCountEl.textContent || '0') + 1);
+        return;
+      }
+      const { data, error } = await client.rpc('increment_verse_like', { p_id: id });
+      if (error) { console.warn('increment_verse_like failed', error); return; }
+      // RPC returns the new likes (bigint) - Supabase returns as string sometimes
+      verseLikeCountEl.textContent = String(data || data === 0 ? data : (data && data[0] && data[0].likes) || '0');
+    } catch (e) { console.warn('likeVerse error', e); }
+  }
+
+  if (verseLikeBtn) {
+    verseLikeBtn.addEventListener('click', async () => {
+      // optimistic UI
+      verseLikeCountEl.textContent = String(Number(verseLikeCountEl.textContent || '0') + 1);
+      await likeVerse('verse_of_day');
+    });
   }
 
   async function fetchProfile() {
@@ -584,7 +581,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderAnnouncements() {
     if (!homeAnnouncements) return;
     homeAnnouncements.innerHTML = '';
-    announcementsSeed.forEach(item => {
+    // Announcements are loaded from language-specific JSON when available
+    const items = window.__ANNOUNCEMENTS || announcementsSeed;
+    items.forEach(item => {
       const li = document.createElement('li');
       li.className = 'list-item';
       li.innerHTML = `
@@ -601,7 +600,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderSermons() {
     if (!homeSermons) return;
     homeSermons.innerHTML = '';
-    sermonsSeed.forEach(s => {
+    // Use at most three recent sermons from data or seed
+    const items = (window.__EMBEDDED_SERMONS || window.__EMBEDDED_SERMONS || sermonsSeed).slice(0,3);
+    items.forEach(s => {
+      const anchor = document.createElement('a');
+      anchor.href = `https://www.youtube.com/watch?v=${s.youtubeId}`;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.className = 'sermon-link';
       const card = document.createElement('article');
       card.className = 'sermon-card';
       const thumb = `https://img.youtube.com/vi/${s.youtubeId}/mqdefault.jpg`;
@@ -612,28 +618,33 @@ document.addEventListener("DOMContentLoaded", async () => {
           <h4>${s.title}</h4>
         </div>
       `;
-      homeSermons.appendChild(card);
+      anchor.appendChild(card);
+      homeSermons.appendChild(anchor);
     });
   }
 
   function renderPosts() {
-    if (!homePosts) return;
-    homePosts.innerHTML = '';
-    postsSeed.forEach(p => {
+    // Posts are shown on the Posts view (separate tab). Render to the posts-view container when present.
+    const postsContainer = document.getElementById('postsContainer') || document.getElementById('homePosts');
+    if (!postsContainer) return;
+    postsContainer.innerHTML = '';
+    const items = window.__POSTS || postsSeed;
+    items.forEach(p => {
       const card = document.createElement('article');
       card.className = 'post-card';
       card.innerHTML = `
-        <div class="post-head"><span class="avatar">${p.author[0] || 'A'}</span><div><p class="item-title">${p.author}</p><p class="small muted">${p.time}</p></div></div>
+        <div class="post-head"><span class="avatar">${(p.author && p.author[0]) || 'A'}</span><div><p class="item-title">${p.author}</p><p class="small muted">${p.time}</p></div></div>
         <p class="post-content">${p.content}</p>
       `;
-      homePosts.appendChild(card);
+      postsContainer.appendChild(card);
     });
   }
 
   function renderQuiz() {
     if (!quizQuestionEl || !quizOptionsEl || !quizFeedbackEl) return;
-    const idx = dayOfYear % quizSeed.length;
-    const item = quizSeed[idx];
+    const items = window.__QUIZ || quizSeed;
+    const idx = dayOfYear % items.length;
+    const item = items[idx];
     quizQuestionEl.textContent = item.q;
     quizOptionsEl.innerHTML = '';
     quizFeedbackEl.textContent = '';
@@ -685,18 +696,95 @@ document.addEventListener("DOMContentLoaded", async () => {
       return `completedDays:${planName}`;
     }
 
+    // Do not read localStorage for completed days in testing; return empty array.
     function loadCompleted(planName) {
+      return [];
+    }
+
+    // saveCompleted will NOT persist to localStorage; it writes remote when available.
+    async function saveCompleted(planName, arr) {
       try {
-        const raw = localStorage.getItem(storageKey(planName));
-        return raw ? JSON.parse(raw) : [];
-      } catch {
-        return [];
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return;
+        await client
+          .from('reading_progress')
+          .upsert([{ user_id: supabaseUser.id, plan_name: planName, completed_days: arr }], { returning: 'minimal' });
+      } catch (e) { console.warn('saveCompleted(remote) failed', e); }
+    }
+
+    // Check whether remote progress exists for this user. Do NOT write to localStorage.
+    async function syncProgressFromRemote() {
+      try {
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return false;
+        const { data, error } = await client
+          .from('reading_progress')
+          .select('plan_name')
+          .eq('user_id', supabaseUser.id);
+        if (error || !data) return false;
+        return (data && data.length > 0);
+      } catch (e) {
+        console.warn('syncProgressFromRemote failed', e);
+        return false;
       }
     }
 
-    function saveCompleted(planName, arr) {
-      localStorage.setItem(storageKey(planName), JSON.stringify(arr));
+    // Populate in-memory `state.readState` from remote per-chapter progress (completed_chapters jsonb)
+    async function syncChaptersFromRemote() {
+      try {
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return;
+        const { data, error } = await client
+          .from('reading_progress')
+          .select('plan_name, completed_chapters')
+          .eq('user_id', supabaseUser.id);
+        if (error || !data) return;
+        // Reset in-memory chapter state and populate from remote
+        state.readState = {};
+        for (const row of data) {
+          const chapters = row.completed_chapters || {};
+          for (const key of Object.keys(chapters)) {
+            try {
+              const parts = String(key).split(':');
+              if (parts.length < 2) continue;
+              const bookName = parts.slice(0, parts.length - 1).join(':');
+              const chapterNum = Number(parts[parts.length - 1]);
+              if (!chapterNum) continue;
+              const bookId = findBookIdByName(bookName) || state.selectedBookId;
+              state.readState[bookId] = state.readState[bookId] || {};
+              state.readState[bookId][chapterNum] = true;
+            } catch (e) { /* ignore malformed keys */ }
+          }
+        }
+        // Re-render with remote-backed in-memory state
+        render();
+      } catch (e) {
+        console.warn('syncChaptersFromRemote failed', e);
+      }
     }
+
+    // Clear local progress cache (useful when switching to remote-backed data)
+    window.clearLocalProgress = function() {
+      try {
+        // remove main state key
+        localStorage.removeItem(STORAGE_KEY);
+        // remove any completedDays:* keys
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('completedDays:')) {
+              localStorage.removeItem(k);
+              // adjust index since storage length changed
+              i--;
+            }
+          }
+        } catch (e) { /* ignore */ }
+        // re-render to reflect cleared state
+        state = { selectedBookId: 'genesis', readState: {} };
+        saveState(); render();
+        console.log('Local progress cleared.');
+      } catch (e) { console.warn('clearLocalProgress failed', e); }
+    };
 
     async function fetchPlan(name) {
       // If the page included embedded plans (works with file://), use them first
@@ -749,20 +837,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       planSelect.addEventListener('change', async () => {
         const planName = getSelectedPlan();
         const ok = await ensurePlanLoaded(planName);
-        if (!ok) {
-          showPlanStatus('Failed to load plan. See console.');
-        } else {
-          hidePlanStatus();
-        }
-        const max = populateDays(planName);
-        const defaultDay = Math.max(1, Math.min(dayOfYear(), max || 1));
-        if (daySelect && max >= defaultDay) daySelect.value = String(defaultDay);
-        renderSelectedDay();
-        renderHistory();
-        if (fullPlanEl && !fullPlanEl.hidden) renderFullPlan();
+        if (!ok) showPlanStatus('Failed to load plan. See console.');
+        else hidePlanStatus();
+        // Plans view is intentionally minimal; do not populate days or render details.
       });
       if (daySelect) daySelect.addEventListener('change', ()=>{ renderSelectedDay(); });
-      markBtn.addEventListener('click', markCompleted);
+      if (markBtn) markBtn.addEventListener('click', markCompleted);
 
   // initial population — try to ensure the selected plan is loaded, then populate
       const initialOk = await ensurePlanLoaded(getSelectedPlan());
@@ -771,12 +851,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (location && location.protocol === 'file:') {
         const fileHint = document.getElementById('fileHint'); if (fileHint) fileHint.hidden = false;
       }
-  const max = populateDays(getSelectedPlan());
-  const defaultDay = Math.max(1, Math.min(dayOfYear(), max || 1));
-  if (daySelect && max >= defaultDay) daySelect.value = String(defaultDay);
-  renderSelectedDay();
-  renderHistory();
-      loadVerseOfTheDay();
+  // Do not populate days or render selected day — Plans page is intentionally simplified.
+      loadVerseOfTheDay('en');
+  // Load verse likes counter (global)
+  loadVerseLikes().catch(()=>{});
 
       renderAnnouncements();
       renderSermons();
@@ -786,6 +864,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateKidsAuthUI();
       await refreshSession();
       await refreshKidsFromSupabase(true);
+      // If user is signed in, synchronize remote reading progress into localStorage
+      try {
+        const hadRemote = await syncProgressFromRemote();
+        if (hadRemote) {
+          // Remote progress exists. Do NOT perform any client-side migration
+          // or automatic clearing of local `completedDays` to preserve local test data.
+          console.info('Remote reading_progress rows found; local completedDays left unchanged (no client migration).');
+        }
+      } catch (e) { /* ignore */ }
+      // If signed in, populate in-memory chapter progress from remote so UI reflects server state.
+      try { if (supabaseUser) await syncChaptersFromRemote(); } catch (e) { console.warn('initial syncChaptersFromRemote failed', e); }
 
       // Fallback render (supabase fetch also renders)
       renderKids();
@@ -868,7 +957,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function renderSelectedDay() {
       const planName = getSelectedPlan();
-      const plan = plans[planName];
+      const plan = (typeof window !== 'undefined' && window.__EMBEDDED_PLANS && window.__EMBEDDED_PLANS[planName]) ? window.__EMBEDDED_PLANS[planName] : plans[planName];
       // If daySelect has a meaningful value use it; otherwise fall back to computed dayOfYear()
       const day = (daySelect && daySelect.value) ? Number(daySelect.value) : dayOfYear();
       if (dayLabel) dayLabel.textContent = `Day ${day} • ${planName}`;
@@ -892,7 +981,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         const ul = document.createElement('ul');
         for (const e of entries) {
           const li = document.createElement('li');
-          li.textContent = `${e.book} ${e.chapter}`;
+          const btn = document.createElement('button');
+          btn.className = 'link-like';
+          btn.textContent = `${e.book} ${e.chapter}`;
+          btn.addEventListener('click', ()=>{
+            // Open the Bible page and navigate to the selected book/chapter
+            try { window.openBibleChapter && window.openBibleChapter(e.book, Number(e.chapter)); }
+            catch(err){ console.warn('openBibleChapter failed', err); }
+          });
+          li.appendChild(btn);
           ul.appendChild(li);
         }
         readingListEl.appendChild(ul);
@@ -934,7 +1031,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function populateDays(planName) {
       if (!daySelect) return 0;
-      const plan = plans[planName];
+      const plan = (typeof window !== 'undefined' && window.__EMBEDDED_PLANS && window.__EMBEDDED_PLANS[planName]) ? window.__EMBEDDED_PLANS[planName] : (plans && plans[planName]);
       if (!plan) { daySelect.innerHTML = '<option value="">Select a plan first</option>'; return 0; }
       const keys = Object.keys(plan).map(n => Number(n)).filter(n=>!isNaN(n));
       const maxDay = keys.length ? Math.max(...keys) : 0;
@@ -952,7 +1049,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!fullPlanEl) return;
       fullPlanEl.innerHTML = '';
       const planName = getSelectedPlan();
-      const plan = plans[planName];
+      const plan = (typeof window !== 'undefined' && window.__EMBEDDED_PLANS && window.__EMBEDDED_PLANS[planName]) ? window.__EMBEDDED_PLANS[planName] : (plans && plans[planName]);
       if (!plan) { fullPlanEl.textContent = 'Plan not loaded.'; return; }
       const keys = Object.keys(plan).map(n=>Number(n)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
       for (const d of keys) {
@@ -979,56 +1076,111 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    async function loadVerseOfTheDay() {
-      try {
-        // Try loading the large local verses file (365 entries)
-        const res = await fetch('data/verses.json');
-        if (res.ok) {
-          const verses = await res.json();
-          const day = dayOfYear();
-          const idx = ((day - 1) % (verses.length || 1));
-          const pick = verses[idx] || verses[0] || null;
-          const verseText = document.getElementById('verse-text');
-          const verseRef = document.getElementById('verse-ref');
-          if (pick) {
-            if (verseText) verseText.textContent = pick.text;
-            if (verseRef) verseRef.textContent = pick.ref;
-            return;
-          }
-        }
-      } catch (e) {
-        // fall through to fallback sample
-        console.warn('Could not load data/verses.json, falling back to sample verses.', e);
-      }
-
-      // Fallback: small local sample (keeps app functional if file is missing)
-      try {
-        const sample = [
-          { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
-          { text: "Your word is a lamp to my feet and a light to my path.", ref: "Psalm 119:105" },
-          { text: "For God so loved the world, that he gave his only Son.", ref: "John 3:16" }
-        ];
-        const pick = sample[Math.floor(Math.random() * sample.length)];
-        const verseText = document.getElementById('verse-text');
-        const verseRef = document.getElementById('verse-ref');
-        if (verseText) verseText.textContent = pick.text;
-        if (verseRef) verseRef.textContent = pick.ref;
-      } catch (e) {
-        console.error('Verse load error', e);
-      }
-    }
-
     // Initialize
     init().catch(err => {
       console.error('Init failed', err);
       if (readingListEl) readingListEl.textContent = 'Failed to load reading plans. See console.';
     });
 
+    // Expose plan-reading helper: returns today's entries plus any missed (previous days not marked completed)
+    window.getSelectedPlanName = getSelectedPlan;
+    window.getPlanReadingEntries = function() {
+      try {
+        const planName = getSelectedPlan();
+        const plan = plans[planName];
+        if (!plan) return [];
+        const todayNum = dayOfYear();
+        const completed = loadCompleted(planName) || [];
+        const out = [];
+        for (let d = 1; d <= todayNum; d++) {
+          if (completed.includes(d)) continue;
+          const entries = plan[String(d)];
+          if (!entries || entries.length === 0) continue;
+          for (const e of entries) {
+            out.push({ day: d, book: e.book, chapter: Number(e.chapter) });
+          }
+        }
+        return out;
+      } catch (e) {
+        console.warn('getPlanReadingEntries failed', e);
+        return [];
+      }
+    };
+
+  // Expose helper to get entries for a specific day number for the selected plan
+  window.getPlanEntriesForDay = function(dayNumber) {
+    try {
+      const planName = getSelectedPlan();
+      const plan = (typeof window !== 'undefined' && window.__EMBEDDED_PLANS && window.__EMBEDDED_PLANS[planName]) ? window.__EMBEDDED_PLANS[planName] : (plans && plans[planName]);
+      if (!plan) return [];
+      const entries = plan[String(dayNumber)];
+      if (!entries || entries.length === 0) return [];
+      return entries.map(e => ({ day: dayNumber, book: e.book, chapter: Number(e.chapter) }));
+    } catch (e) { console.warn('getPlanEntriesForDay failed', e); return []; }
+  };
+
   })();
+
+  // Global function to load verse of the day (accessible from all modules)
+  async function loadVerseOfTheDay(lang = 'en') {
+    try {
+      // Try loading language-specific verses file
+      const res = await fetch(`data/verses-${lang}.json`);
+      if (res.ok) {
+        const verses = await res.json();
+        // Calculate day of year (1-365)
+        const now = new Date();
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const diffMs = now - startOfYear;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const dayOfYear = diffDays + 1; // Day 1-365
+        
+        // Get verse for this day, cycling through available verses
+        const idx = (dayOfYear - 1) % verses.length;
+        const pick = verses[idx];
+        
+        console.log(`📖 Day ${dayOfYear} - Loading ${lang} verse index ${idx}/${verses.length}: ${pick.ref}`);
+        
+        if (pick) {
+          const verseText = document.getElementById('verse-text');
+          const verseRef = document.getElementById('verse-ref');
+          if (verseText) verseText.textContent = pick.text;
+          if (verseRef) verseRef.textContent = pick.ref;
+          console.log('✅ Loaded verse of day:', lang, pick.ref);
+          return;
+        }
+      } else {
+        console.warn(`📖 Fetch returned status ${res.status} for data/verses-${lang}.json`);
+      }
+    } catch (e) {
+      console.warn(`❌ Could not load data/verses-${lang}.json:`, e.message);
+    }
+
+    // Fallback: small local sample (keeps app functional if file is missing)
+    try {
+      const sample = lang === 'ta' ? [
+        { text: "கர்த்தர் என் மேய்ப்பர்; எனக்குக் குறைவு இல்லை.", ref: "சங்கீதம் 23:1" },
+        { text: "உம்முடைய வார்த்தை என் கால்களுக்கு விளக்கும் என் பாதைக்கு ஒளியுமாயிருக்கிறது.", ref: "சங்கீதம் 119:105" },
+        { text: "தேவன் உலகத்தில் அன்பு கூர்ந்தார், அவர் தம்முடைய ஒரே பேறான குமாரனைத் தந்தருளினார்.", ref: "யோவான் 3:16" }
+      ] : [
+        { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
+        { text: "Your word is a lamp to my feet and a light to my path.", ref: "Psalm 119:105" },
+        { text: "For God so loved the world, that he gave his only Son.", ref: "John 3:16" }
+      ];
+      const pick = sample[Math.floor(Math.random() * sample.length)];
+      const verseText = document.getElementById('verse-text');
+      const verseRef = document.getElementById('verse-ref');
+      if (verseText) verseText.textContent = pick.text;
+      if (verseRef) verseRef.textContent = pick.ref;
+      console.log('⚠️ Using fallback sample verse:', pick.ref);
+    } catch (e) {
+      console.error('Verse load error', e);
+    }
+  }
 
   // --- Books module (original bible-reader features) ---
   (function(){
-    const BOOKS = [
+    let BOOKS = [
       {id:"genesis", name:"Genesis", chapters:50},
       {id:"exodus", name:"Exodus", chapters:40},
       {id:"leviticus", name:"Leviticus", chapters:27},
@@ -1096,10 +1248,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       {id:"jude", name:"Jude", chapters:1},
       {id:"revelation", name:"Revelation", chapters:22}
     ];
+    // Keep an immutable copy of original English book metadata so we can restore names
+    const ORIGINAL_BOOKS = JSON.parse(JSON.stringify(BOOKS));
 
     const STORAGE_KEY = 'bible-tracker';
     let state = { selectedBookId: 'genesis', readState: {} };
-    try { const saved = localStorage.getItem(STORAGE_KEY); if (saved) state = JSON.parse(saved); } catch(e){}
 
     // DOM refs
     const booksList = document.getElementById('booksList');
@@ -1111,16 +1264,99 @@ document.addEventListener("DOMContentLoaded", async () => {
     const donutText = document.getElementById('donutText');
     const markAllBtn = document.getElementById('markAllBtn');
     const clearBtn = document.getElementById('clearBtn');
-    const exportBtn = document.getElementById('exportBtn');
-    const importFile = document.getElementById('importFile');
+    const bookSelectorForExtra = document.getElementById('bookSelectorForExtra');
+    const extraBookSelect = document.getElementById('extraBookSelect');
+    // Books view controls for plan-day navigation and display mode
+    const prevDayBtn = document.getElementById('prevDayBtn');
+    const nextDayBtn = document.getElementById('nextDayBtn');
+    const currentPlanDayDisplay = document.getElementById('currentPlanDayDisplay');
+    const showMissedToggle = document.getElementById('showMissedToggle');
+    const showAllChaptersToggle = document.getElementById('showAllChaptersToggle');
+    function getActivePlanName() {
+      const el = document.getElementById('planSelect');
+      return (el && el.value) ? el.value : 'canonical';
+    }
+    function getDayOfYearLocal(date = new Date()) {
+      const start = new Date(date.getFullYear(), 0, 0);
+      const diff = date - start;
+      const oneDay = 1000 * 60 * 60 * 24;
+      return Math.floor(diff / oneDay);
+    }
+    let currentPlanDayNumber = getDayOfYearLocal();
+    function updatePlanDayDisplay(){ if(currentPlanDayDisplay) currentPlanDayDisplay.textContent = 'Day ' + String(currentPlanDayNumber); }
+    updatePlanDayDisplay();
+    function getPlanMaxDay(planName) {
+      try {
+        const plan = (typeof window !== 'undefined' && window.__EMBEDDED_PLANS && window.__EMBEDDED_PLANS[planName]) ? window.__EMBEDDED_PLANS[planName] : (plans && plans[planName]);
+        if (!plan) return 365;
+        const keys = Object.keys(plan).map(n=>Number(n)).filter(n=>!isNaN(n));
+        return keys.length ? Math.max(...keys) : 365;
+      } catch (e) { return 365; }
+    }
 
-    function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    if (prevDayBtn) prevDayBtn.addEventListener('click', ()=>{
+      currentPlanDayNumber = Math.max(1, currentPlanDayNumber - 1);
+      updatePlanDayDisplay(); render();
+    });
+    if (nextDayBtn) nextDayBtn.addEventListener('click', ()=>{
+      const maxDay = getPlanMaxDay(getActivePlanName());
+      currentPlanDayNumber = Math.min(maxDay, currentPlanDayNumber + 1);
+      updatePlanDayDisplay(); render();
+    });
+    if (showAllChaptersToggle) showAllChaptersToggle.addEventListener('change', ()=>{
+      if (showAllChaptersToggle.checked && showMissedToggle) showMissedToggle.checked = false;
+      // Show/hide book selector dropdown
+      if (bookSelectorForExtra) {
+        bookSelectorForExtra.hidden = !showAllChaptersToggle.checked;
+        if (showAllChaptersToggle.checked) populateExtraBookDropdown();
+      }
+      render();
+    });
+    if (showMissedToggle) showMissedToggle.addEventListener('change', ()=>{
+      if (showMissedToggle.checked && showAllChaptersToggle) showAllChaptersToggle.checked = false;
+      render();
+    });
+
+    function populateExtraBookDropdown() {
+      if (!extraBookSelect) return;
+      extraBookSelect.innerHTML = '';
+      BOOKS.forEach(b => {
+        const option = document.createElement('option');
+        option.value = b.id;
+        option.textContent = b.name;
+        if (b.id === state.selectedBookId) option.selected = true;
+        extraBookSelect.appendChild(option);
+      });
+    }
+
+    if (extraBookSelect) {
+      extraBookSelect.addEventListener('change', () => {
+        state.selectedBookId = extraBookSelect.value;
+        saveState();
+        render();
+      });
+    }
+
+    // Do not persist state to localStorage in testing environment.
+    function saveState(){ /* no-op - local persistence disabled */ }
 
     function getBookProgress(bookId){
       const b = BOOKS.find(b=>b.id===bookId);
       const readCount = Object.keys(state.readState[bookId]||{}).length;
       const pct = Math.round(readCount / b.chapters *100);
       return { readCount, total:b.chapters, pct };
+    }
+
+    function findBookIdByName(name) {
+      if (!name) return null;
+      const normalized = String(name).toLowerCase().replace(/\s+/g,' ').trim();
+      let candidate = BOOKS.find(b => b.name.toLowerCase() === normalized);
+      if (candidate) return candidate.id;
+      candidate = BOOKS.find(b => b.name.toLowerCase().startsWith(normalized) || normalized.startsWith(b.name.toLowerCase()));
+      if (candidate) return candidate.id;
+      // try matching short names like '1 John' vs '1-john'
+      candidate = BOOKS.find(b => b.id.replace(/-/g,'').toLowerCase() === normalized.replace(/\s+/g,'').toLowerCase());
+      return candidate ? candidate.id : null;
     }
 
     function renderBooks(){
@@ -1138,6 +1374,49 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function renderChapters(filter='all'){
       if(!chaptersContainer) return;
+      // Determine plan display mode
+      const showAll = showAllChaptersToggle && showAllChaptersToggle.checked;
+      const showMissed = showMissedToggle && showMissedToggle.checked;
+      let planEntries = [];
+      try {
+        if (!showAll) {
+          if (showMissed) {
+            planEntries = (window.getPlanReadingEntries && typeof window.getPlanReadingEntries === 'function') ? window.getPlanReadingEntries() : [];
+          } else {
+            // show only the selected plan day
+            planEntries = (window.getPlanEntriesForDay && typeof window.getPlanEntriesForDay === 'function') ? window.getPlanEntriesForDay(currentPlanDayNumber) : [];
+          }
+        }
+        if (planEntries && planEntries.length > 0) {
+          chaptersContainer.innerHTML = '';
+          const list = document.createElement('div'); list.className = 'plan-entries-list';
+          for (const item of planEntries) {
+            const bookId = findBookIdByName(item.book) || state.selectedBookId;
+            const bookObj = BOOKS.find(b=>b.id===bookId) || { name: item.book };
+            const read = !!(state.readState[bookId] && state.readState[bookId][item.chapter]);
+            // Apply filter: filter variable is passed into renderChapters
+            if (filter === 'read' && !read) continue;
+            if (filter === 'unread' && read) continue;
+            const row = document.createElement('div'); row.className = 'plan-entry';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'round-checkbox';
+            checkbox.checked = read;
+            checkbox.addEventListener('change', ()=>{ toggleChapter(bookId, item.chapter); checkbox.checked = !!(state.readState[bookId] && state.readState[bookId][item.chapter]); });
+            const label = document.createElement('label'); label.className = 'plan-entry-label';
+            label.textContent = `${bookObj.name} ${item.chapter}  `;
+            const meta = document.createElement('span'); meta.className = 'muted small'; meta.textContent = `Day ${item.day}`;
+            row.appendChild(checkbox);
+            row.appendChild(label);
+            row.appendChild(meta);
+            list.appendChild(row);
+          }
+          chaptersContainer.appendChild(list);
+          return;
+        }
+      } catch (e) {
+        console.warn('renderChapters plan-entries render failed', e);
+      }
       chaptersContainer.innerHTML = '';
       const book = BOOKS.find(b=>b.id===state.selectedBookId);
       if(bookTitle) bookTitle.textContent = book.name;
@@ -1156,32 +1435,139 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    function toggleChapter(bookId,ch){
+    async function toggleChapter(bookId,ch){
+      // Optimistic local update
       state.readState[bookId] = state.readState[bookId]||{};
-      if(state.readState[bookId][ch]) delete state.readState[bookId][ch];
+      const wasRead = !!state.readState[bookId][ch];
+      if(wasRead) delete state.readState[bookId][ch];
       else state.readState[bookId][ch] = true;
       saveState(); render();
+
+      // If Supabase is configured and user is signed in, call the RPC to persist per-chapter state
+      try {
+        const client = getSupabaseClient();
+        if (!client || !supabaseUser) return;
+        const bookObj = BOOKS.find(b=>b.id===bookId);
+        const bookName = bookObj ? bookObj.name : String(bookId);
+        await client.rpc('mark_chapter_progress', {
+          p_plan_name: getActivePlanName(),
+          p_book: bookName,
+          p_chapter: ch,
+          p_completed: !wasRead
+        });
+      } catch (e) {
+        console.warn('mark_chapter_progress RPC failed', e);
+      }
     }
 
     if(markAllBtn) markAllBtn.onclick = ()=>{
+      try {
+        // Prefer operating on currently rendered plan-entry DOM nodes so we only affect visible items
+        const rows = Array.from(document.querySelectorAll('#chaptersContainer .plan-entry'));
+        if (rows && rows.length > 0) {
+          rows.forEach(row => {
+            try {
+              const label = row.querySelector('.plan-entry-label');
+              if (!label) return;
+              const text = label.textContent.trim(); // e.g. "Genesis 5"
+              const parts = text.split(/\s+/);
+              const chapter = Number(parts[parts.length - 1]) || null;
+              const bookName = parts.slice(0, parts.length - 1).join(' ');
+              const bookId = findBookIdByName(bookName) || state.selectedBookId;
+              if (!chapter) return;
+              state.readState[bookId] = state.readState[bookId] || {};
+              state.readState[bookId][chapter] = true;
+            } catch (e) { /* ignore row parse errors */ }
+          });
+          saveState(); render();
+          // Persist each visible plan-entry chapter to Supabase if available
+          (async () => {
+            try {
+              const client = getSupabaseClient();
+              if (!client || !supabaseUser) return;
+              for (const row of rows) {
+                try {
+                  const label = row.querySelector('.plan-entry-label');
+                  if (!label) continue;
+                  const text = label.textContent.trim(); // e.g. "Genesis 5"
+                  const parts = text.split(/\s+/);
+                  const chapter = Number(parts[parts.length - 1]) || null;
+                  const bookName = parts.slice(0, parts.length - 1).join(' ');
+                  if (!chapter) continue;
+                  await client.rpc('mark_chapter_progress', {
+                    p_plan_name: getActivePlanName(),
+                    p_book: bookName,
+                    p_chapter: chapter,
+                    p_completed: true
+                  });
+                } catch (e) { /* ignore per-row errors */ }
+              }
+            } catch (e) { console.warn('markAll remote sync failed', e); }
+          })();
+          return;
+        }
+      } catch (e) {
+        console.warn('markAllBtn DOM-based mark failed', e);
+      }
+      // Fallback: mark entire selected book
       const b = BOOKS.find(b=>b.id===state.selectedBookId);
       state.readState[b.id] = {};
       for(let i=1;i<=b.chapters;i++) state.readState[b.id][i]=true;
       saveState(); render();
     };
 
-    if(clearBtn) clearBtn.onclick = ()=>{ delete state.readState[state.selectedBookId]; saveState(); render(); };
-
-    if(exportBtn) exportBtn.onclick = ()=>{
-      const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download='bible-progress.json'; a.click(); URL.revokeObjectURL(url);
-    };
-
-    if(importFile) importFile.onchange = (e)=>{
-      const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
-      reader.onload = ev=>{ state = JSON.parse(ev.target.result); saveState(); render(); e.target.value=''; };
-      reader.readAsText(file);
+    if(clearBtn) clearBtn.onclick = ()=>{
+      try {
+        const rows = Array.from(document.querySelectorAll('#chaptersContainer .plan-entry'));
+        if (rows && rows.length > 0) {
+          rows.forEach(row => {
+            try {
+              const label = row.querySelector('.plan-entry-label');
+              if (!label) return;
+              const text = label.textContent.trim();
+              const parts = text.split(/\s+/);
+              const chapter = Number(parts[parts.length - 1]) || null;
+              const bookName = parts.slice(0, parts.length - 1).join(' ');
+              const bookId = findBookIdByName(bookName) || state.selectedBookId;
+              if (!chapter) return;
+              if (state.readState[bookId] && state.readState[bookId][chapter]) {
+                delete state.readState[bookId][chapter];
+                if (Object.keys(state.readState[bookId]).length === 0) delete state.readState[bookId];
+              }
+            } catch (e) { /* ignore */ }
+          });
+          saveState(); render();
+          // Persist unmarking of each visible plan-entry chapter to Supabase if available
+          (async () => {
+            try {
+              const client = getSupabaseClient();
+              if (!client || !supabaseUser) return;
+              for (const row of rows) {
+                try {
+                  const label = row.querySelector('.plan-entry-label');
+                  if (!label) continue;
+                  const text = label.textContent.trim();
+                  const parts = text.split(/\s+/);
+                  const chapter = Number(parts[parts.length - 1]) || null;
+                  const bookName = parts.slice(0, parts.length - 1).join(' ');
+                  if (!chapter) continue;
+                  await client.rpc('mark_chapter_progress', {
+                    p_plan_name: getActivePlanName(),
+                    p_book: bookName,
+                    p_chapter: chapter,
+                    p_completed: false
+                  });
+                } catch (e) { /* ignore per-row errors */ }
+              }
+            } catch (e) { console.warn('clear remote sync failed', e); }
+          })();
+          return;
+        }
+      } catch (e) {
+        console.warn('clearBtn DOM-based clear failed', e);
+      }
+      // Fallback: clear entire selected book
+      delete state.readState[state.selectedBookId]; saveState(); render();
     };
 
     document.querySelectorAll('.filters .btn').forEach(btn=>{
@@ -1199,16 +1585,303 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(overallFill) overallFill.style.width = pct + '%';
       if(overallText) overallText.textContent = `${read} / ${total} chapters`;
       if(donutText) donutText.textContent = pct + '%';
+      // If user is signed in and Supabase is available, prefer remote aggregate counts
+      (async () => {
+        try {
+          const client = getSupabaseClient();
+          if (!client || !supabaseUser) return;
+          const { data, error } = await client
+            .from('reading_progress_summary')
+            .select('chapters_read');
+          if (error || !data) return;
+          const remoteRead = data.reduce((s, r) => s + (r.chapters_read || 0), 0);
+          const remotePct = Math.round(remoteRead / total * 100);
+          if (overallFill) overallFill.style.width = remotePct + '%';
+          if (overallText) overallText.textContent = `${remoteRead} / ${total} chapters`;
+          if (donutText) donutText.textContent = remotePct + '%';
+        } catch (e) { /* ignore remote failures */ }
+      })();
     }
 
     function render(){ renderBooks(); renderChapters(document.querySelector('.filters .btn.active')?.dataset.filter || 'all'); renderOverall(); }
+
+    // Language support: load language-specific JSONs for announcements, quiz and posts
+    let LANG = 'en';
+    async function loadLocaleData(lang) {
+      LANG = lang || 'en';
+      const langBtn = document.getElementById('langToggle');
+      if (langBtn) langBtn.textContent = LANG.toUpperCase();
+      console.log('🌍 Loading locale:', lang);
+      try {
+        const aRes = await fetch(`data/announcements_${lang}.json`);
+        if (aRes.ok) {
+          window.__ANNOUNCEMENTS = await aRes.json();
+          console.log('✅ Loaded announcements:', lang);
+        }
+      } catch (e) { 
+        console.warn('❌ Failed announcements:', e);
+        window.__ANNOUNCEMENTS = announcementsSeed; 
+      }
+      try {
+        const qRes = await fetch(`data/quiz_${lang}.json`);
+        if (qRes.ok) {
+          window.__QUIZ = await qRes.json();
+          console.log('✅ Loaded quiz:', lang);
+        }
+      } catch (e) { 
+        console.warn('❌ Failed quiz:', e);
+        window.__QUIZ = quizSeed; 
+      }
+      try {
+        const pRes = await fetch(`data/posts_${lang}.json`);
+        if (pRes.ok) {
+          window.__POSTS = await pRes.json();
+          console.log('✅ Loaded posts:', lang);
+        }
+      } catch (e) { 
+        console.warn('❌ Failed posts:', e);
+        window.__POSTS = postsSeed; 
+      }
+      // optional sermons JSON
+      try {
+        const sRes = await fetch('data/sermons.json');
+        if (sRes.ok) window.__EMBEDDED_SERMONS = await sRes.json();
+      } catch (e) { /* ignore */ }
+      // Re-render things that depend on locale
+      renderAnnouncements(); renderQuiz(); renderPosts();
+      console.log('✅ Re-rendered UI elements');
+      
+      // Reload verse of the day for the selected language
+      await loadVerseOfTheDay(lang);
+      
+      // Load localized reading plans (both canonical and chronological)
+      try {
+        // Always initialize embedded plans
+        window.__EMBEDDED_PLANS = {};
+        console.log('📚 Loading plans for:', lang);
+        
+        // Load both plan types for the selected language
+        const [canonicalResp, chronologicalResp, enCanonicalResp] = await Promise.allSettled([
+          fetch(`data/reading-plan-canonical-${lang}.json`),
+          fetch(`data/reading-plan-chronological-${lang}.json`),
+          fetch('data/reading-plan-canonical-en.json')
+        ]);
+        
+        let canonicalPlan = null, chronologicalPlan = null, enPlan = null;
+        
+        if (canonicalResp.status === 'fulfilled' && canonicalResp.value.ok) {
+          canonicalPlan = await canonicalResp.value.json();
+          window.__EMBEDDED_PLANS['canonical'] = canonicalPlan;
+          console.log('✅ Canonical plan loaded. Days:', Object.keys(canonicalPlan).length);
+        } else {
+          console.warn('❌ Failed canonical plan:', lang);
+        }
+        
+        if (chronologicalResp.status === 'fulfilled' && chronologicalResp.value.ok) {
+          chronologicalPlan = await chronologicalResp.value.json();
+          window.__EMBEDDED_PLANS['chronological'] = chronologicalPlan;
+          console.log('✅ Chronological plan loaded');
+        } else {
+          console.warn('❌ Failed chronological plan:', lang);
+        }
+        
+        if (enCanonicalResp.status === 'fulfilled' && enCanonicalResp.value.ok) {
+          enPlan = await enCanonicalResp.value.json();
+          console.log('✅ English plan loaded for mapping');
+        }
+        
+        // Update BOOKS names based on language
+        if (lang === 'en') {
+          // Restore original English book names
+          BOOKS = JSON.parse(JSON.stringify(ORIGINAL_BOOKS));
+          console.log('✅ Restored EN book names');
+        } else if (canonicalPlan && enPlan) {
+          // Build mapping from English to localized names
+          const mapping = {};
+          for (const day of Object.keys(enPlan)) {
+            const enEntries = enPlan[day] || [];
+            const langEntries = canonicalPlan[day] || [];
+            for (let i = 0; i < Math.min(enEntries.length, langEntries.length); i++) {
+              const enName = enEntries[i].book;
+              const langName = langEntries[i].book;
+              if (enName && langName && !mapping[enName]) mapping[enName] = langName;
+            }
+          }
+          console.log('📖 Mapped', Object.keys(mapping).length, 'books');
+          // Apply mapping to BOOKS
+          if (Object.keys(mapping).length) {
+            BOOKS = BOOKS.map(b => {
+              const mapped = mapping[b.name];
+              return Object.assign({}, b, { name: mapped || b.name });
+            });
+            console.log('✅ BOOKS updated. Sample:', BOOKS.slice(0,3).map(b=>b.name));
+          }
+        } else {
+          // Fallback: restore English names if localized plans not found
+          BOOKS = JSON.parse(JSON.stringify(ORIGINAL_BOOKS));
+          console.warn('⚠️ No localized plans, using EN');
+        }
+        
+        // Re-render books and chapters to reflect localized names
+        renderBooks(); renderChapters(); renderOverall();
+        // Refresh the extra dropdown if it's visible so names match the active locale
+        if (showAllChaptersToggle && showAllChaptersToggle.checked) {
+          populateExtraBookDropdown();
+        }
+        console.log('✅ Books/chapters/progress re-rendered');
+      } catch (e) {
+        console.error('❌ Plan load error:', e);
+        // Ensure we restore English on error
+        if (lang === 'en') {
+          BOOKS = JSON.parse(JSON.stringify(ORIGINAL_BOOKS));
+          renderBooks(); renderChapters();
+        }
+      }
+    }
+
+    // Language toggle UI wiring
+    const langToggleBtn = document.getElementById('langToggle');
+    if (langToggleBtn) {
+      langToggleBtn.addEventListener('click', async () => {
+        LANG = LANG === 'en' ? 'ta' : 'en';
+        langToggleBtn.textContent = LANG.toUpperCase();
+        console.log('🌍 Language toggled to:', LANG);
+        await loadLocaleData(LANG);
+      });
+    }
+
+    // Load default locale (english)
+    loadLocaleData('en').catch(()=>{});
+    // Verse likes helpers
+    async function loadVerseLikes() {
+      try {
+        const btn = document.getElementById('verseLikeBtn');
+        const countEl = document.getElementById('verseLikeCount');
+        const client = getSupabaseClient();
+        const verseId = 'votd-' + new Date().toISOString().slice(0,10);
+        if (!client) {
+          // no remote client; leave local count at 0
+          if (countEl) countEl.textContent = '0';
+          return;
+        }
+        const { data, error } = await client.rpc('get_verse_likes', { p_id: verseId });
+        if (error) { console.warn('get_verse_likes failed', error); if (countEl) countEl.textContent = '0'; return; }
+        if (data && data.length) {
+          if (countEl) countEl.textContent = String(data[0].likes || 0);
+        } else if (countEl) countEl.textContent = '0';
+        if (btn) btn.addEventListener('click', async () => {
+          try {
+            // optimistic
+            const prev = Number(countEl?.textContent || '0');
+            if (countEl) countEl.textContent = String(prev + 1);
+            const { data: incData, error: incErr } = await client.rpc('increment_verse_like', { p_id: verseId });
+            if (incErr) { console.warn('increment_verse_like failed', incErr); if (countEl) countEl.textContent = String(prev); }
+            else if (incData) { if (countEl) countEl.textContent = String(incData); }
+          } catch(e) { console.warn('likeVerse error', e); }
+        });
+      } catch (e) { console.warn('loadVerseLikes failed', e); }
+    }
+
+    // Expose a helper to allow other code to open the Bible to a specific book/chapter
+    window.openBibleChapter = function(bookName, chapter){
+      try {
+        // Map display name (e.g. 'Genesis') to book id used in BOOKS
+        const normalized = String(bookName || '').toLowerCase().replace(/\s+/g,' ').trim();
+        const candidate = BOOKS.find(b => b.name.toLowerCase() === normalized || b.name.toLowerCase().startsWith(normalized));
+        const bookId = candidate ? candidate.id : (BOOKS.find(b=>b.name.toLowerCase().includes(normalized)) || BOOKS[0]).id;
+        state.selectedBookId = bookId;
+        saveState();
+        render();
+        // Show books view
+        showBooks();
+        // After rendering, try to scroll the chapter into view and highlight it briefly
+        setTimeout(()=>{
+          const chapBtns = Array.from(document.querySelectorAll('#chaptersContainer .chapter'));
+          const num = Number(chapter) || 1;
+          const target = chapBtns.find(b => b.textContent.trim() === String(num));
+          if (target) {
+            target.scrollIntoView({behavior:'smooth', block:'center'});
+            target.classList.add('highlight');
+            setTimeout(()=> target.classList.remove('highlight'), 2200);
+          }
+        }, 120);
+      } catch (e) {
+        console.warn('openBibleChapter error', e);
+      }
+    };
 
     // View toggle UI with bottom navigation
     const booksSidebar = document.getElementById('booksSidebar');
     const booksView = document.getElementById('books-view');
     const planView = document.getElementById('plans-view');
     const homeView = document.getElementById('home-view');
+    const kidsView = document.getElementById('kids-view');
     const verseCard = document.getElementById('verse');
+    const menuBtn = document.getElementById('menuBtn');
+    const drawerBackdrop = document.getElementById('drawerBackdrop');
+    const drawerCloseBtn = document.getElementById('drawerCloseBtn');
+
+    function openDrawer() {
+      try {
+        if (booksSidebar) booksSidebar.classList.add('open');
+        if (drawerBackdrop) { drawerBackdrop.classList.add('visible'); drawerBackdrop.hidden = false; }
+        if (menuBtn) menuBtn.setAttribute('aria-expanded', 'true');
+        if (booksSidebar) booksSidebar.setAttribute('aria-hidden', 'false');
+      } catch (e) { /* ignore */ }
+    }
+
+    function closeDrawer() {
+      try {
+        if (booksSidebar) booksSidebar.classList.remove('open');
+        if (drawerBackdrop) { drawerBackdrop.classList.remove('visible'); drawerBackdrop.hidden = true; }
+        if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+        if (booksSidebar) booksSidebar.setAttribute('aria-hidden', 'true');
+      } catch (e) { /* ignore */ }
+    }
+
+    if (menuBtn) {
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (booksSidebar && booksSidebar.classList.contains('open')) closeDrawer();
+        else openDrawer();
+      });
+    }
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+    if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeDrawer);
+
+    // Helper to animate view switches for consistency (adds/removes .showing and toggles [hidden])
+    function showView(target) {
+      const views = [homeView, booksView, planView, kidsView];
+      // include posts view in the animated views
+      const postsView = document.getElementById('posts-view');
+      if (postsView) views.push(postsView);
+      views.forEach(v => {
+        if (!v) return;
+        if (v === target) {
+          // reveal and animate in
+          if (v.hidden) v.hidden = false;
+          // force a frame then add class to trigger transition
+          requestAnimationFrame(() => v.classList.add('showing'));
+        } else {
+          // animate out if currently shown
+          if (!v.hidden && v.classList.contains('showing')) {
+            v.classList.remove('showing');
+            // Only hide after transition if view is still not the target
+            const checkAndHide = (e) => {
+              if (e.target !== v || v === target) return;
+              v.hidden = true;
+              v.removeEventListener('transitionend', checkAndHide);
+            };
+            v.addEventListener('transitionend', checkAndHide, { once: true });
+          }
+        }
+      });
+      // Verse card visibility remains tied to Home view
+      if (verseCard) {
+        if (target === homeView) { verseCard.hidden = false; try { verseCard.removeAttribute('aria-hidden'); } catch(e){} }
+        else { verseCard.hidden = true; try { verseCard.setAttribute('aria-hidden','true'); } catch(e){} }
+      }
+    }
 
     function setActiveNav(nav) {
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -1217,29 +1890,41 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function showBooks(){
-      if(homeView) homeView.hidden = true;
-      if(booksSidebar) booksSidebar.hidden = false;
-      if(booksView) booksView.hidden = false;
-      if(planView) planView.hidden = true;
-      if(verseCard) verseCard.hidden = false;
+      if (booksSidebar) booksSidebar.hidden = false;
+      showView(booksView);
+      // Close drawer overlay when switching views
+      closeDrawer();
       setActiveNav('books');
     }
 
     function showPlans(){
-      if(homeView) homeView.hidden = true;
-      if(booksSidebar) booksSidebar.hidden = true;
-      if(booksView) booksView.hidden = true;
-      if(planView) planView.hidden = false;
-      if(verseCard) verseCard.hidden = true;
+      if (booksSidebar) booksSidebar.hidden = true;
+      showView(planView);
+      // Close drawer overlay when switching views
+      closeDrawer();
+      // Simplify Plans page: only show the plan selector card. Hide detailed plan content.
+      const planSelectorCard = document.querySelector('.plan-selector-card');
+      const planContent = document.querySelector('.plan-content-wrapper');
+      const fullPlanEl = document.getElementById('fullPlan');
+      const planStatus = document.getElementById('planStatus');
+      if (planSelectorCard) planSelectorCard.hidden = false;
+      if (planContent) planContent.hidden = true;
+      if (fullPlanEl) fullPlanEl.hidden = true;
+      if (planStatus) planStatus.hidden = true;
       setActiveNav('plans');
     }
 
+    function showKids(){
+      if (booksSidebar) booksSidebar.hidden = true;
+      showView(kidsView);
+      setActiveNav('kids');
+    }
+
     function showHome(){
-      if(homeView) homeView.hidden = false;
-      if(booksSidebar) booksSidebar.hidden = true;
-      if(booksView) booksView.hidden = true;
-      if(planView) planView.hidden = true;
-      if(verseCard) verseCard.hidden = false;
+      if (booksSidebar) booksSidebar.hidden = true;
+      showView(homeView);
+      // Close drawer overlay when switching views
+      closeDrawer();
       setActiveNav('home');
     }
 
@@ -1248,16 +1933,42 @@ document.addEventListener("DOMContentLoaded", async () => {
       item.addEventListener('click', () => {
         const nav = item.dataset.nav;
         if (nav === 'home') showHome();
-        else if (nav === 'books') { showBooks(); render(); }
+        else if (nav === 'books') {
+          // On small screens, auto-open the books drawer for discoverability
+          if (window.innerWidth <= 900) {
+            showView(booksView);
+            openDrawer();
+            render();
+          } else {
+            showBooks();
+            render();
+          }
+        }
         else if (nav === 'plans') showPlans();
-        else if (nav === 'discover') { alert('Discover coming soon'); }
-        else if (nav === 'more') { alert('More coming soon'); }
+        else if (nav === 'kids') { showKids(); renderKids(); }
+        else if (nav === 'posts') {
+          // Show Posts view
+          const postsView = document.getElementById('posts-view');
+          if (postsView) {
+            showView(postsView);
+            renderPosts();
+            setActiveNav('posts');
+          } else {
+            alert('Posts coming soon');
+          }
+        }
+        else if (nav === 'more') { alert('Coming soon'); }
       });
     });
 
-    // Initialize to Home view
+    // Initialize to Home view (default landing page)
     showHome();
     render();
+    // Render home widgets and posts
+    renderAnnouncements();
+    renderSermons();
+    renderQuiz();
+    renderPosts();
   })();
 
 });

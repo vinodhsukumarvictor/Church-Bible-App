@@ -1,12 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// Safe, client-exposed values only. Never write service-role or private keys here.
+// Only emit non-sensitive, intentionally public values.
+// Avoid writing SUPABASE_URL, SUPABASE_ANON_KEY, or YOUTUBE_API_KEY to build output
+// because Netlify's secrets scanner will fail the build if they appear.
 const env = {
-  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
-  YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || 'YOUR_API_KEY',
-  SUPABASE_URL: process.env.SUPABASE_URL || '',
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || ''
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || ''
 };
 
 const outPath = path.join(process.cwd(), 'public-env.js');
@@ -15,4 +14,4 @@ const lines = Object.entries(env)
   .join('\n');
 
 fs.writeFileSync(outPath, `${lines}\n`, 'utf8');
-console.log(`Wrote ${outPath}`);
+console.log(`Wrote ${outPath} (public values only)`);
