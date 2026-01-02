@@ -5,7 +5,7 @@
   "main": "index.html",
   "scripts": {
     "start": "http-server .",
-    "build": "echo 'Static build - no preprocessing needed'",
+    "build": "node scripts/write-env.js",
     "test": "echo 'No tests defined'"
   },
   "keywords": [
