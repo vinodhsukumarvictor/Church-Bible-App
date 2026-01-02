@@ -1,4 +1,8 @@
 document.addEventListener("DOMContentLoaded", async () => {
+  // Language preference
+  let userLanguage = 'english';
+  const languageSelect = document.getElementById('languageSelect');
+  
   const readingList = document.getElementById("reading-list");
   const progressText = document.getElementById("progress");
   const completedList = document.getElementById("completed-days");
@@ -26,6 +30,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const authLast = document.getElementById('authLast');
   const authUsername = document.getElementById('authUsername');
   const logoutBtn = document.getElementById('logoutBtn');
+  const greetingEl = document.getElementById('greeting');
+  const profileNameEl = document.getElementById('profileName');
+  const profileEmailEl = document.getElementById('profileEmail');
+  const profileDropdownEl = document.getElementById('profileDropdown');
+  const profileLogoutBtn = document.getElementById('profileLogoutBtn');
   const userBadge = document.getElementById('userBadge');
   const adminNavBtn = document.querySelector('[data-nav="admin"]');
 
@@ -456,10 +465,33 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function updateAuthUI() {
     const loggedIn = !!supabaseUser;
-    if (userBadge) {
-      userBadge.textContent = loggedIn ? (supabaseUser.email || 'User') : 'Guest';
+    const userName = supabaseProfile?.first_name || supabaseUser?.user_metadata?.first_name || 'User';
+    const userInitial = userName.charAt(0).toUpperCase();
+    
+    // Update greeting
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    if (greetingEl) {
+      greetingEl.textContent = loggedIn ? `${greeting}, ${userName}` : greeting;
     }
-    if (logoutBtn) logoutBtn.hidden = !loggedIn;
+    
+    // Update profile badge
+    if (userBadge) {
+      userBadge.textContent = loggedIn ? userInitial : '?';
+      userBadge.title = loggedIn ? userName : 'Guest';
+    }
+    
+    // Update profile dropdown
+    if (profileNameEl) {
+      profileNameEl.textContent = loggedIn ? userName : 'Guest';
+    }
+    if (profileEmailEl) {
+      profileEmailEl.textContent = loggedIn ? (supabaseUser.email || '') : '';
+    }
+    if (profileLogoutBtn) {
+      profileLogoutBtn.hidden = !loggedIn;
+    }
+    
     if (adminNavBtn) adminNavBtn.hidden = !(loggedIn && isAdmin());
     if (loggedIn) hideAuthModal();
   }
@@ -487,8 +519,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
     
+    console.log('Sending magic link to:', email);
+    console.log('Redirect URL:', authRedirectTo);
+    
     // Always use OTP for passwordless auth (works for both new and existing users)
-    const { error } = await client.auth.signInWithOtp({
+    const { data, error } = await client.auth.signInWithOtp({
       email,
       options: { 
         emailRedirectTo: authRedirectTo,
@@ -497,13 +532,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     
     if (error) {
+      console.error('Magic link error:', error);
       alert(`Magic link failed: ${error.message}`);
       return;
     }
     
+    console.log('Magic link response:', data);
     alert(hasProfileData 
-      ? 'Check your email for a magic link to complete signup!' 
-      : 'Check your email for a magic link to sign in!');
+      ? 'Check your email for a magic link to complete signup! (Check spam folder too)' 
+      : 'Check your email for a magic link to sign in! (Check spam folder too)');
   }
 
   async function handleLogout() {
@@ -852,10 +889,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   // lets the user mark the day completed and keeps history in localStorage.
 
   (async function () {
-    const planFiles = {
-      canonical: 'data/reading-plan-canonical.json',
-      chronological: 'data/reading-plan-chronological.json'
-    };
+    function getPlanFiles(lang) {
+      return {
+        canonical: `data/reading-plan-canonical-${lang}.json`,
+        chronological: `data/reading-plan-chronological-${lang}.json`
+      };
+    }
+    
+    let planFiles = getPlanFiles(userLanguage);
 
   let plans = { canonical: null, chronological: null };
   const planSelect = document.getElementById('planSelect');
@@ -910,6 +951,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         console.warn('embedded plans check failed', ex);
       }
 
+      // Use language-specific plan files
+      planFiles = getPlanFiles(userLanguage);
       const url = planFiles[name];
       // Try fetch first (works when served over http).
       try {
@@ -949,6 +992,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       planSelect.addEventListener('change', async () => {
         const planName = getSelectedPlan();
+        state.activePlan = planName;  // Update active plan in state
         const ok = await ensurePlanLoaded(planName);
         if (!ok) {
           showPlanStatus('Failed to load plan. See console.');
@@ -961,6 +1005,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderSelectedDay();
         renderHistory();
         if (fullPlanEl && !fullPlanEl.hidden) renderFullPlan();
+        // Update Bible tab if it's currently visible
+        if (!booksView?.hidden) {
+          await updatePlanReadings();
+          render();
+        }
       });
       if (daySelect) daySelect.addEventListener('change', ()=>{ renderSelectedDay(); });
       markBtn.addEventListener('click', markCompleted);
@@ -1002,11 +1051,20 @@ document.addEventListener("DOMContentLoaded", async () => {
           username: authUsername?.value
         });
       });
-      if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
-      if (authOverlay) authOverlay.addEventListener('click', hideAuthModal);
-
-      // Fallback render (supabase fetch also renders)
-      renderKids();
+    if (profileLogoutBtn) profileLogoutBtn.addEventListener('click', handleLogout);
+    if (userBadge) {
+      userBadge.addEventListener('click', () => {
+        if (profileDropdownEl) {
+          profileDropdownEl.hidden = !profileDropdownEl.hidden;
+        }
+      });
+    }
+    if (authOverlay) authOverlay.addEventListener('click', hideAuthModal);    // Close profile dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (profileDropdownEl && !e.target.closest('.profile-menu-wrapper')) {
+        profileDropdownEl.hidden = true;
+      }
+    });
       
       // Fetch latest sermons from YouTube
       fetchLatestSermons();
@@ -1218,8 +1276,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     async function loadVerseOfTheDay() {
       try {
-        // Try loading the large local verses file (365 entries)
-        const res = await fetch('data/verses.json');
+        // Load verses based on selected language
+        const lang = userLanguage || 'english';
+        const res = await fetch(`data/verses-${lang}.json`);
         if (res.ok) {
           const verses = await res.json();
           const day = dayOfYear();
@@ -1235,16 +1294,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       } catch (e) {
         // fall through to fallback sample
-        console.warn('Could not load data/verses.json, falling back to sample verses.', e);
+        console.warn(`Could not load data/verses-${userLanguage}.json, falling back to sample verses.`, e);
       }
 
       // Fallback: small local sample (keeps app functional if file is missing)
       try {
-        const sample = [
+        const lang = userLanguage || 'english';
+        const sampleEn = [
           { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
           { text: "Your word is a lamp to my feet and a light to my path.", ref: "Psalm 119:105" },
           { text: "For God so loved the world, that he gave his only Son.", ref: "John 3:16" }
         ];
+        const sampleTa = [
+          { text: "கர்த்தர் என் மேய்ப்பராயிருக்கிறார்; நான் தாழ்ச்சியடையேன்.", ref: "சங்கீதம் 23:1" },
+          { text: "தேவன் தம்முடைய ஒரேபேறான குமாரனை விசுவாசிக்கிறவன் எவனோ அவன் கெட்டுப்போகாமல் நித்தியஜீவனை அடையும்படிக்கு, அவரைத் தந்தருளி, இவ்வளவாய் உலகத்தில் அன்புகூர்ந்தார்.", ref: "யோவான் 3:16" },
+          { text: "என்னைப் பலப்படுத்துகிற கிறிஸ்துவினாலே எல்லாவற்றையும் செய்யவல்லவனாயிருக்கிறேன்.", ref: "பிலிப்பியர் 4:13" }
+        ];
+        const sample = lang === 'tamil' ? sampleTa : sampleEn;
         const pick = sample[Math.floor(Math.random() * sample.length)];
         const verseText = document.getElementById('verse-text');
         const verseRef = document.getElementById('verse-ref');
@@ -1265,76 +1331,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // --- Books module (original bible-reader features) ---
   (function(){
-    const BOOKS = [
-      {id:"genesis", name:"Genesis", chapters:50},
-      {id:"exodus", name:"Exodus", chapters:40},
-      {id:"leviticus", name:"Leviticus", chapters:27},
-      {id:"numbers", name:"Numbers", chapters:36},
-      {id:"deuteronomy", name:"Deuteronomy", chapters:34},
-      {id:"joshua", name:"Joshua", chapters:24},
-      {id:"judges", name:"Judges", chapters:21},
-      {id:"ruth", name:"Ruth", chapters:4},
-      {id:"1-samuel", name:"1 Samuel", chapters:31},
-      {id:"2-samuel", name:"2 Samuel", chapters:24},
-      {id:"1-kings", name:"1 Kings", chapters:22},
-      {id:"2-kings", name:"2 Kings", chapters:25},
-      {id:"1-chronicles", name:"1 Chronicles", chapters:29},
-      {id:"2-chronicles", name:"2 Chronicles", chapters:36},
-      {id:"ezra", name:"Ezra", chapters:10},
-      {id:"nehemiah", name:"Nehemiah", chapters:13},
-      {id:"esther", name:"Esther", chapters:10},
-      {id:"job", name:"Job", chapters:42},
-      {id:"psalms", name:"Psalms", chapters:150},
-      {id:"proverbs", name:"Proverbs", chapters:31},
-      {id:"ecclesiastes", name:"Ecclesiastes", chapters:12},
-      {id:"song-of-solomon", name:"Song of Solomon", chapters:8},
-      {id:"isaiah", name:"Isaiah", chapters:66},
-      {id:"jeremiah", name:"Jeremiah", chapters:52},
-      {id:"lamentations", name:"Lamentations", chapters:5},
-      {id:"ezekiel", name:"Ezekiel", chapters:48},
-      {id:"daniel", name:"Daniel", chapters:12},
-      {id:"hosea", name:"Hosea", chapters:14},
-      {id:"joel", name:"Joel", chapters:3},
-      {id:"amos", name:"Amos", chapters:9},
-      {id:"obadiah", name:"Obadiah", chapters:1},
-      {id:"jonah", name:"Jonah", chapters:4},
-      {id:"micah", name:"Micah", chapters:7},
-      {id:"nahum", name:"Nahum", chapters:3},
-      {id:"habakkuk", name:"Habakkuk", chapters:3},
-      {id:"zephaniah", name:"Zephaniah", chapters:3},
-      {id:"haggai", name:"Haggai", chapters:2},
-      {id:"zechariah", name:"Zechariah", chapters:14},
-      {id:"malachi", name:"Malachi", chapters:4},
-      {id:"matthew", name:"Matthew", chapters:28},
-      {id:"mark", name:"Mark", chapters:16},
-      {id:"luke", name:"Luke", chapters:24},
-      {id:"john", name:"John", chapters:21},
-      {id:"acts", name:"Acts", chapters:28},
-      {id:"romans", name:"Romans", chapters:16},
-      {id:"1-corinthians", name:"1 Corinthians", chapters:16},
-      {id:"2-corinthians", name:"2 Corinthians", chapters:13},
-      {id:"galatians", name:"Galatians", chapters:6},
-      {id:"ephesians", name:"Ephesians", chapters:6},
-      {id:"philippians", name:"Philippians", chapters:4},
-      {id:"colossians", name:"Colossians", chapters:4},
-      {id:"1-thessalonians", name:"1 Thessalonians", chapters:5},
-      {id:"2-thessalonians", name:"2 Thessalonians", chapters:3},
-      {id:"1-timothy", name:"1 Timothy", chapters:6},
-      {id:"2-timothy", name:"2 Timothy", chapters:4},
-      {id:"titus", name:"Titus", chapters:3},
-      {id:"philemon", name:"Philemon", chapters:1},
-      {id:"hebrews", name:"Hebrews", chapters:13},
-      {id:"james", name:"James", chapters:5},
-      {id:"1-peter", name:"1 Peter", chapters:5},
-      {id:"2-peter", name:"2 Peter", chapters:3},
-      {id:"1-john", name:"1 John", chapters:5},
-      {id:"2-john", name:"2 John", chapters:1},
-      {id:"3-john", name:"3 John", chapters:1},
-      {id:"jude", name:"Jude", chapters:1},
-      {id:"revelation", name:"Revelation", chapters:22}
-    ];
-
-    let state = { selectedBookId: 'genesis', readState: {} };
+    let BOOKS = []; // Will be loaded based on language
+    
+    let state = { selectedBookId: 'genesis', readState: {}, activePlan: 'canonical' };
 
     // DOM refs
     const booksList = document.getElementById('booksList');
@@ -1349,7 +1348,61 @@ document.addEventListener("DOMContentLoaded", async () => {
     const exportBtn = document.getElementById('exportBtn');
     const importFile = document.getElementById('importFile');
 
+    async function loadBooksForLanguage(lang) {
+      try {
+        const res = await fetch(`/data/books-${lang}.json`);
+        const data = await res.json();
+        BOOKS = data.books || [];
+        console.log(`✓ Loaded ${BOOKS.length} books for language: ${lang}`);
+        return BOOKS;
+      } catch (e) {
+        console.error(`Error loading books for ${lang}:`, e);
+        return [];
+      }
+    }
+
     function saveState(){ /* no-op: state kept in memory; server is source of truth */ }
+
+    // Helper: get readings from plan for today + missed dates
+    async function getTodayAndMissedReadings(planName = state.activePlan) {
+      try {
+        const langSuffix = userLanguage === 'tamil' ? '-ta' : '-en';
+        const res = await fetch(`/data/reading-plan-${planName}${langSuffix}.json`);
+        const plan = await res.json();
+        
+        const today = dayOfYear();
+        const readings = {};
+        
+        // Iterate from day 1 to today
+        for (let day = 1; day <= today; day++) {
+          const dayReadings = plan[String(day)];
+          if (!dayReadings) continue;
+          
+          // Check if all chapters for this day are read
+          const allRead = dayReadings.every(reading => {
+            const bookId = BOOKS.find(b => b.name === reading.book)?.id;
+            return bookId && readingProgressMap[bookId]?.[reading.chapter];
+          });
+          
+          // If any chapter is unread, include this day's readings
+          if (!allRead) {
+            dayReadings.forEach(reading => {
+              readings[reading.book] = readings[reading.book] || [];
+              readings[reading.book].push(reading.chapter);
+            });
+          }
+        }
+        return readings;
+      } catch (e) {
+        console.error('Error fetching plan:', e);
+        return {};
+      }
+    }
+
+    // Update plan readings in state (called when loading Bible tab or changing plan)
+    async function updatePlanReadings() {
+      state.planReadings = await getTodayAndMissedReadings();
+    }
 
     function getBookProgress(bookId){
       const b = BOOKS.find(b=>b.id===bookId);
@@ -1380,14 +1433,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(bookMeta) bookMeta.textContent = `${prog.readCount} / ${prog.total} chapters — ${prog.pct}%`;
 
       for(let i=1;i<=book.chapters;i++){
+        // Skip if not in plan readings
+        if (state.planReadings && !state.planReadings[book.name]?.includes(i)) continue;
+        
         const read = !!(readingProgressMap[book.id] && readingProgressMap[book.id][i]);
         if(filter==='read' && !read) continue;
         if(filter==='unread' && read) continue;
-        const btn = document.createElement('button');
-        btn.className = 'chapter' + (read? ' read':'');
-        btn.textContent = i;
-        btn.onclick = ()=>{ toggleChapter(book.id,i); };
-        chaptersContainer.appendChild(btn);
+        
+        const div = document.createElement('div');
+        div.className = 'chapter-item';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = read;
+        checkbox.className = 'chapter-checkbox';
+        checkbox.addEventListener('change', () => toggleChapter(book.id, i));
+        
+        const label = document.createElement('label');
+        label.className = 'chapter-label';
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(` Chapter ${i}`));
+        
+        div.appendChild(label);
+        chaptersContainer.appendChild(div);
       }
     }
 
@@ -1426,9 +1494,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!client || !supabaseUser) return;
       const b = BOOKS.find(b=>b.id===state.selectedBookId);
       const rows = [];
-      for(let i=1;i<=b.chapters;i++) rows.push({ user_id: supabaseUser.id, book: b.id, chapter: i, is_read: true });
+      // Only mark chapters that are in the current plan
+      const planChapters = state.planReadings?.[b.name] || [];
+      for(let i=1;i<=b.chapters;i++) {
+        if (planChapters.includes(i)) {
+          rows.push({ user_id: supabaseUser.id, book: b.id, chapter: i, is_read: true });
+        }
+      }
+      if (rows.length === 0) { showToast('No chapters to mark in this plan'); return; }
       const { error } = await client.from('reading_progress').upsert(rows, { onConflict: 'user_id,book,chapter' });
       if (error) { alert(`Could not mark all: ${error.message}`); return; }
+      showToast(`Marked ${rows.length} chapters as read`);
       await loadReadingProgress();
       render();
     };
@@ -1485,6 +1561,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderChapters(btn.dataset.filter);
       });
     });
+
+    // Initialize first filter button as active
+    document.querySelector('.filters .btn[data-filter="all"]')?.classList.add('active');
 
     function renderOverall(){
       const total = BOOKS.reduce((sum,b)=>sum+b.chapters,0);
@@ -1551,6 +1630,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(planView) planView.hidden = true;
       if(verseCard) verseCard.hidden = false;
       setActiveNav('books');
+      updatePlanReadings().then(() => render());
     }
 
     function showPlans(){
@@ -1572,6 +1652,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(verseCard) verseCard.hidden = false;
       if(adminView) adminView.hidden = true;
       setActiveNav('home');
+      updateWelcomeStats();
+    }
+
+    function updateWelcomeStats() {
+      // Calculate total chapters read
+      const totalRead = Object.values(readingProgressMap).reduce((sum, book) => sum + Object.keys(book).length, 0);
+      const totalReadEl = document.getElementById('totalReadStat');
+      if (totalReadEl) totalReadEl.textContent = totalRead;
+
+      // Placeholder for streak calculation (would need dates stored)
+      const streakEl = document.getElementById('readingStreakStat');
+      if (streakEl) streakEl.textContent = '—';
+
+      // Placeholder for plans started
+      const plansEl = document.getElementById('completedPlansStat');
+      if (plansEl) plansEl.textContent = state.activePlan ? '1' : '0';
+
+      // Update welcome message
+      const welcomeMsg = document.getElementById('welcomeMessage');
+      if (welcomeMsg && supabaseProfile?.username) {
+        welcomeMsg.textContent = `Welcome back, ${supabaseProfile.username}! Ready to read today's scriptures?`;
+      }
     }
 
     async function showAdmin(){
@@ -1682,9 +1784,60 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (roleUpdateBtn) roleUpdateBtn.addEventListener('click', updateUserRole);
 
+    // Language switching handler (defined in Books module scope but needs to affect reading plans too)
+    const originalSwitchLanguage = switchLanguage;
+    async function switchLanguage(lang) {
+      userLanguage = lang;
+      localStorage.setItem('preferredLanguage', lang);
+      
+      // Reload books for this language
+      await loadBooksForLanguage(lang);
+      
+      // Clear plans cache so they reload in new language
+      plans = { canonical: null, chronological: null };
+      planFiles = getPlanFiles(lang);
+      
+      // Refresh the current view
+      render();
+      
+      // Reload verse of the day in new language
+      await loadVerseOfTheDay();
+      
+      // If we're on the reading plan view, reload it
+      const planSelect = document.getElementById('planSelect');
+      if (planSelect && planSelect.value) {
+        await ensurePlanLoaded(planSelect.value);
+        const daySelect = document.getElementById('daySelect');
+        if (daySelect) {
+          const max = populateDays(getSelectedPlan());
+          if (max >= 1) daySelect.value = String(Math.max(1, Math.min(dayOfYear(), max)));
+        }
+        renderSelectedDay();
+        renderHistory();
+      }
+      
+      showToast(`Language changed to ${lang === 'english' ? 'English' : 'தமிழ்'}`);
+    }
+
+    if (languageSelect) {
+      languageSelect.addEventListener('change', (e) => switchLanguage(e.target.value));
+    }
+
     // Initialize to Home view
-    showHome();
-    render();
+    async function initModule() {
+      // Load user's language preference
+      const savedLang = localStorage.getItem('preferredLanguage') || 'english';
+      userLanguage = savedLang;
+      if (languageSelect) languageSelect.value = savedLang;
+      
+      // Load books for the selected language
+      await loadBooksForLanguage(userLanguage);
+      
+      showHome();
+      render();
+    }
+
+    initModule().catch(err => console.error('Module init failed:', err));
   })();
 
 });
