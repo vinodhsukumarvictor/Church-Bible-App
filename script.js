@@ -63,50 +63,27 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Fetch latest sermons from YouTube
   async function fetchLatestSermons() {
-    // Prefer server-side proxy to keep the API key secret. Falls back to client-side if needed.
+    // Prefer server-side proxy to keep the API key secret.
     try {
       const proxyUrl = `/.netlify/functions/fetchYouTube?handle=${encodeURIComponent(YOUTUBE_CHANNEL_HANDLE)}&max=6`;
       const res = await fetch(proxyUrl);
       if (res.ok) {
         const json = await res.json();
         if (json.items && json.items.length) {
-          // normalize to our local sermons format
-          sermonsSeed = json.items.map(i => ({ title: i.snippet?.title || 'Untitled', speaker: 'FCM Liverpool', youtubeId: i.id?.videoId || (i.id && i.id.videoId) || '', date: i.snippet?.publishedAt ? new Date(i.snippet.publishedAt).toLocaleDateString('en-GB') : '' }));
+          console.log(`✅ Fetched ${json.items.length} sermons from YouTube`);
+          sermonsSeed = json.items;
           renderSermons();
           return;
         }
       } else {
-        console.warn('YouTube proxy returned non-OK:', res.status);
+        const errorBody = await res.json().catch(() => ({}));
+        console.warn(`⚠️ YouTube proxy returned ${res.status}:`, errorBody.error || 'Unknown error');
       }
-
-      // If proxy fails and a client API key is present, fall back to client-side fetch
-      if (YOUTUBE_API_KEY && YOUTUBE_API_KEY !== 'YOUR_API_KEY') {
-        console.log('Proxy failed — falling back to client-side YouTube fetch');
-        // small, direct search for videos
-        const directResponse = await fetch(
-          `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&q=FCM+Liverpool+sermon&type=video&order=date&maxResults=6&part=snippet`
-        );
-        if (directResponse.ok) {
-          const directData = await directResponse.json();
-          sermonsSeed = directData.items.map(item => {
-            const videoId = item.id?.videoId || item.id;
-            return {
-              title: item.snippet?.title || 'Untitled',
-              speaker: 'FCM Liverpool',
-              youtubeId: typeof videoId === 'string' ? videoId : '',
-              date: item.snippet?.publishedAt ? new Date(item.snippet.publishedAt).toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''
-            };
-          }).filter(sermon => sermon.youtubeId);
-          renderSermons();
-          return;
-        }
-      }
-
-      console.log('Using fallback sermon data');
     } catch (error) {
-      console.error('❌ Could not fetch latest sermons from YouTube or proxy:', error);
-      console.log('Using fallback sermon data');
+      console.warn('⚠️ YouTube proxy fetch failed:', error.message);
     }
+
+    console.log('📌 Using fallback sermon data');
   }
 
   const postsSeed = [
@@ -1969,6 +1946,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderSermons();
     renderQuiz();
     renderPosts();
+
+    // --- Profile Modal Handler ---
+    const profileBtn = document.querySelector('.profile-btn');
+    const profileModal = document.getElementById('profileModal');
+    const profileCloseBtn = document.getElementById('profileCloseBtn');
+    const profileName = document.getElementById('profileName');
+    const profileEmail = document.getElementById('profileEmail');
+
+    if (profileBtn && profileModal) {
+      profileBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          // Get current user from Supabase
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            profileName.textContent = user.user_metadata?.full_name || 'User';
+            profileEmail.textContent = user.email || 'No email';
+            profileModal.hidden = false;
+          }
+        } catch (err) {
+          console.warn('Could not fetch user:', err);
+          profileName.textContent = 'User';
+          profileEmail.textContent = 'Not signed in';
+          profileModal.hidden = false;
+        }
+      });
+
+      if (profileCloseBtn) {
+        profileCloseBtn.addEventListener('click', () => {
+          profileModal.hidden = true;
+        });
+      }
+
+      // Close modal when clicking outside
+      profileModal.addEventListener('click', (e) => {
+        if (e.target === profileModal) {
+          profileModal.hidden = true;
+        }
+      });
+    }
   })();
 
 });

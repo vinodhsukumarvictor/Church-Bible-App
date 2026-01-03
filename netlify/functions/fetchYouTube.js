@@ -2,22 +2,38 @@ exports.handler = async (event) => {
   try {
     const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
     if (!YOUTUBE_API_KEY) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'YOUTUBE_API_KEY not configured' }) };
+      console.error('❌ YOUTUBE_API_KEY not found in environment');
+      return { 
+        statusCode: 500, 
+        body: JSON.stringify({ error: 'YOUTUBE_API_KEY not configured' }) 
+      };
     }
 
     const params = event.queryStringParameters || {};
     const handle = params.handle || '@FCMLiverpool';
     const maxResults = params.max || 6;
 
+    console.log(`📺 Fetching YouTube videos for handle: ${handle}`);
+
     // First, try to find the channel ID by searching for the handle
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?key=${encodeURIComponent(YOUTUBE_API_KEY)}&q=${encodeURIComponent(handle)}&type=channel&part=snippet&maxResults=1`;
     const chRes = await fetch(searchUrl);
     if (!chRes.ok) {
       const text = await chRes.text();
-      return { statusCode: chRes.status, body: JSON.stringify({ error: 'Channel lookup failed', detail: text }) };
+      console.error(`Channel lookup failed: ${chRes.status} - ${text}`);
+      return { 
+        statusCode: chRes.status, 
+        body: JSON.stringify({ error: 'Channel lookup failed', detail: text }) 
+      };
     }
     const chJson = await chRes.json();
     let channelId = chJson.items && chJson.items[0] && chJson.items[0].snippet && chJson.items[0].snippet.channelId;
+
+    if (channelId) {
+      console.log(`✅ Found channel ID: ${channelId}`);
+    } else {
+      console.log(`⚠️ Channel ID not found for ${handle}, trying direct video search`);
+    }
 
     // If channelId not found, try to search for videos directly by name
     let videosJson = null;
@@ -26,7 +42,11 @@ exports.handler = async (event) => {
       const directRes = await fetch(directUrl);
       if (!directRes.ok) {
         const text = await directRes.text();
-        return { statusCode: directRes.status, body: JSON.stringify({ error: 'Direct video search failed', detail: text }) };
+        console.error(`Direct video search failed: ${directRes.status} - ${text}`);
+        return { 
+          statusCode: directRes.status, 
+          body: JSON.stringify({ error: 'Direct video search failed', detail: text }) 
+        };
       }
       videosJson = await directRes.json();
     } else {
@@ -34,7 +54,11 @@ exports.handler = async (event) => {
       const vRes = await fetch(videosUrl);
       if (!vRes.ok) {
         const text = await vRes.text();
-        return { statusCode: vRes.status, body: JSON.stringify({ error: 'Channel videos fetch failed', detail: text }) };
+        console.error(`Channel videos fetch failed: ${vRes.status} - ${text}`);
+        return { 
+          statusCode: vRes.status, 
+          body: JSON.stringify({ error: 'Channel videos fetch failed', detail: text }) 
+        };
       }
       videosJson = await vRes.json();
     }
@@ -50,13 +74,18 @@ exports.handler = async (event) => {
       };
     }).filter(x => x.youtubeId);
 
+    console.log(`✅ Fetched ${items.length} videos`);
+
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items })
     };
   } catch (err) {
-    console.error('fetchYouTube error', err);
-    return { statusCode: 500, body: JSON.stringify({ error: 'Internal error' }) };
+    console.error('❌ fetchYouTube error:', err);
+    return { 
+      statusCode: 500, 
+      body: JSON.stringify({ error: 'Internal error', message: err.message }) 
+    };
   }
 };

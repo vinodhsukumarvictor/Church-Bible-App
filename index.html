@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bible Reading Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#4b0082" />
@@ -190,10 +191,6 @@
 
       <section id="books-view" class="card view-panel" hidden>
         <div class="topline">
-          <div>
-            <h2 id="bookTitle">Genesis</h2>
-            <p class="small muted" id="bookMeta">0 / 50 chapters — 0%</p>
-          </div>
           <div class="day-nav" id="dayNav">
             <button class="btn" id="prevDayBtn" title="Previous day">◀</button>
             <div class="day-info">
@@ -201,11 +198,13 @@
               <div id="currentPlanDayDisplay">Day 1</div>
             </div>
             <button class="btn" id="nextDayBtn" title="Next day">▶</button>
-            <label class="small muted" style="margin-left:12px;display:flex;align-items:center;gap:8px;">
+          </div>
+          <div class="options-row">
+            <label class="small muted" style="display:flex;align-items:center;gap:8px;">
               <input type="checkbox" id="showMissedToggle"> Show missed up to today
             </label>
-            <label class="small muted" style="margin-left:12px;display:flex;align-items:center;gap:8px;">
-              <input type="checkbox" id="showAllChaptersToggle"> Read extra (show all chapters)
+            <label class="small muted" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="showAllChaptersToggle"> Read extra
             </label>
           </div>
           <div id="bookSelectorForExtra" class="book-selector-extra" hidden>
@@ -232,6 +231,22 @@
   <footer class="site-footer">
     <p>Made with ❤️ for daily devotion</p>
   </footer>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal" hidden>
+    <div class="modal-content">
+      <button id="profileCloseBtn" class="modal-close" aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+      <div class="profile-info">
+        <div class="profile-avatar">V</div>
+        <h2 id="profileName">Loading...</h2>
+        <p id="profileEmail" class="small muted">Loading...</p>
+      </div>
+    </div>
+  </div>
 
   <!-- Bottom Navigation -->
   <nav class="bottom-nav">
