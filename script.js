@@ -7,6 +7,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   const verseRef = document.getElementById("verse-ref");
   const verseLikeBtn = document.getElementById('verseLikeBtn');
   const verseLikeCountEl = document.getElementById('verseLikeCount');
+  const profileBtn = document.getElementById('profileBtn');
+  const greetingText = document.getElementById('greetingText');
+  const profileNameEl = document.getElementById('profileName');
+  const profileEmailEl = document.getElementById('profileEmail');
+  const profileAvatarEl = document.getElementById('profileAvatar');
+  const authEmailInput = document.getElementById('authEmail');
+  const authPasswordInput = document.getElementById('authPassword');
+  const signinBtn = document.getElementById('signinBtn');
+  const signupBtn = document.getElementById('signupBtn');
+  const signoutBtn = document.getElementById('signoutBtn');
+  const authStatusEl = document.getElementById('authStatus');
 
   const homeAnnouncements = document.getElementById('homeAnnouncements');
   const homeSermons = document.getElementById('homeSermons');
@@ -37,8 +48,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (!k) continue;
           if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k);
         }
-        // Prevent further writes to localStorage in this testing environment
-        try { localStorage.setItem = function(){}; localStorage.removeItem = function(){}; localStorage.clear = function(){}; } catch(e) {}
       } catch (e) { console.warn('Could not fully disable local persistence', e); }
     })();
   } catch (e) { /* ignore in environments without localStorage */ }
@@ -211,6 +220,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       supabaseUser = session?.user || null;
       supabaseProfile = await fetchProfile();
       updateKidsAuthUI();
+      updateUserUI();
       refreshKidsFromSupabase();
     });
     return supabaseClient;
@@ -280,6 +290,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     supabaseUser = data?.session?.user || null;
     supabaseProfile = supabaseUser ? await fetchProfile() : null;
     updateKidsAuthUI();
+    updateUserUI();
+  }
+
+  function updateUserUI() {
+    const name = supabaseProfile?.full_name || supabaseUser?.email || 'Guest';
+    const initial = (name && name.trim().charAt(0).toUpperCase()) || '?';
+    if (greetingText) greetingText.textContent = supabaseUser ? `Welcome, ${name}` : 'Welcome';
+    if (profileBtn) profileBtn.textContent = initial;
+    if (profileAvatarEl) profileAvatarEl.textContent = initial;
+    if (profileNameEl) profileNameEl.textContent = supabaseUser ? name : 'Not signed in';
+    if (profileEmailEl) profileEmailEl.textContent = supabaseUser ? (supabaseUser.email || 'Signed in') : 'Sign in below';
+    if (signoutBtn) signoutBtn.disabled = !supabaseUser;
+  }
+
+  function setAuthStatus(message, isError = false) {
+    if (!authStatusEl) return;
+    authStatusEl.textContent = message || '';
+    authStatusEl.classList.toggle('warn', !!isError);
   }
 
   function updateKidsAuthUI() {
@@ -359,6 +387,47 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (supabaseUser) {
       setKidsStatus(kidsGalleryData.length ? 'Uploads fetched from Supabase.' : 'Signed in. No uploads yet.', false);
     }
+  }
+
+  async function signIn(email, password) {
+    const client = getSupabaseClient();
+    if (!client) { setAuthStatus('Supabase not configured.', true); return; }
+    if (!email || !password) { setAuthStatus('Email and password are required.', true); return; }
+    setAuthStatus('Signing in…');
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (error) { setAuthStatus(`Sign in failed: ${error.message}`, true); return; }
+    await refreshSession();
+    setAuthStatus('Signed in');
+  }
+
+  async function signUp(email, password) {
+    const client = getSupabaseClient();
+    if (!client) { setAuthStatus('Supabase not configured.', true); return; }
+    if (!email || !password) { setAuthStatus('Email and password are required.', true); return; }
+    setAuthStatus('Creating account…');
+    const { data, error } = await client.auth.signUp({ email, password });
+    if (error) { setAuthStatus(`Sign up failed: ${error.message}`, true); return; }
+    const user = data?.user;
+    if (user) {
+      const defaultName = email.split('@')[0];
+      await client.from('profiles').upsert({ id: user.id, full_name: defaultName });
+    }
+    await refreshSession();
+    setAuthStatus('Account created. Check your inbox if confirmation is required.');
+  }
+
+  async function signOut() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    await client.auth.signOut();
+    supabaseUser = null;
+    supabaseProfile = null;
+    updateUserUI();
+    setAuthStatus('Signed out');
+    updateKidsAuthUI();
+    kidsBackendMode = 'local';
+    kidsGalleryData = kidsSample.slice();
+    renderKids();
   }
 
   async function handleKidsLogin() {
@@ -1866,12 +1935,65 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
+    // --- Admin functions ---
+    async function renderAdminUsers() {
+      const container = document.getElementById('adminUsersTableContainer');
+      if (!container) return;
+      container.textContent = 'Loading users...';
+      const client = getSupabaseClient();
+      if (!client) { container.textContent = 'Supabase not configured.'; return; }
+      // Admins can read all profiles via RLS policy
+      const { data, error } = await client.from('profiles').select('id, full_name, role, created_at').order('created_at', { ascending: false });
+      if (error) { container.textContent = `Could not load users: ${error.message}`; return; }
+      const rows = data || [];
+      if (!rows.length) { container.innerHTML = '<div class="small muted">No users found.</div>'; return; }
+      const table = document.createElement('table'); table.className = 'admin-table';
+      const thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th>Name</th><th>Role</th><th>Joined</th><th>Actions</th></tr>';
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        const name = r.full_name || r.id;
+        tr.innerHTML = `<td>${escapeHtml(name)}</td><td>${escapeHtml(r.role || 'member')}</td><td>${new Date(r.created_at).toLocaleString()}</td><td class="admin-actions"></td>`;
+        const actionsTd = tr.querySelector('.admin-actions');
+        const promoteBtn = document.createElement('button'); promoteBtn.className = 'btn'; promoteBtn.textContent = 'Promote to admin';
+        promoteBtn.addEventListener('click', () => changeUserRole(r.id, 'admin'));
+        const demoteBtn = document.createElement('button'); demoteBtn.className = 'btn warn'; demoteBtn.textContent = 'Demote to member';
+        demoteBtn.addEventListener('click', () => changeUserRole(r.id, 'member'));
+        actionsTd.appendChild(promoteBtn); actionsTd.appendChild(demoteBtn);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      container.innerHTML = ''; container.appendChild(table);
+    }
+
+    async function changeUserRole(userId, newRole) {
+      if (!confirm(`Change role for user ${userId} to ${newRole}?`)) return;
+      const client = getSupabaseClient();
+      if (!client) { alert('Supabase not configured'); return; }
+      const { data, error } = await client.from('profiles').update({ role: newRole }).eq('id', userId);
+      if (error) { alert(`Could not update role: ${error.message}`); return; }
+      alert('Role updated');
+      renderAdminUsers();
+    }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]; }); }
+
     function showBooks(){
       if (booksSidebar) booksSidebar.hidden = false;
       showView(booksView);
       // Close drawer overlay when switching views
       closeDrawer();
       setActiveNav('books');
+    }
+
+    function showAdmin(){
+      const adminView = document.getElementById('admin-view');
+      if (booksSidebar) booksSidebar.hidden = true;
+      if (adminView) showView(adminView);
+      setActiveNav('admin');
+      renderAdminUsers();
     }
 
     function showPlans(){
@@ -1935,10 +2057,43 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         }
         else if (nav === 'more') { alert('Coming soon'); }
+        else if (nav === 'admin') { showAdmin(); }
       });
     });
 
+    // Profile modal & auth actions
+    const profileModal = document.getElementById('profileModal');
+    if (profileBtn && profileModal) {
+      profileBtn.addEventListener('click', () => {
+        profileModal.hidden = false;
+        updateUserUI();
+      });
+      profileModal.addEventListener('click', (e) => {
+        if (e.target === profileModal) profileModal.hidden = true;
+      });
+    }
+    const profileCloseBtn = document.getElementById('profileCloseBtn');
+    if (profileCloseBtn && profileModal) {
+      profileCloseBtn.addEventListener('click', () => profileModal.hidden = true);
+    }
+    if (signinBtn) signinBtn.addEventListener('click', () => signIn(authEmailInput?.value || '', authPasswordInput?.value || ''));
+    if (signupBtn) signupBtn.addEventListener('click', () => signUp(authEmailInput?.value || '', authPasswordInput?.value || ''));
+    if (signoutBtn) signoutBtn.addEventListener('click', () => { signOut(); if (profileModal) profileModal.hidden = true; });
+
+    // Show admin nav if user is app admin
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const { data: adminRes, error: adminErr } = await client.rpc('is_app_admin');
+        const isAppAdmin = (adminErr ? false : (adminRes && (adminRes === true || (Array.isArray(adminRes) && (adminRes[0] === true)))));
+        const adminNav = document.querySelector('.admin-nav');
+        if (isAppAdmin && adminNav) { adminNav.hidden = false; adminNav.classList.add('show'); }
+      }
+    } catch (e) { /* ignore */ }
+
     // Initialize to Home view (default landing page)
+    getSupabaseClient();
+    await refreshSession();
     showHome();
     render();
     // Render home widgets and posts

@@ -13,7 +13,7 @@
   <header class="site-header">
     <div>
       <h1>Today</h1>
-      <p class="greeting">Good afternoon, Vinodh</p>
+      <p class="greeting" id="greetingText">Welcome</p>
     </div>
     <div class="header-actions">
       <button class="action-icon" aria-label="Streak">
@@ -33,7 +33,7 @@
         </svg>
       </button>
       <button id="langToggle" class="action-icon" aria-label="Toggle language" title="Toggle language">EN</button>
-      <button class="profile-btn">V</button>
+      <button class="profile-btn" id="profileBtn">?</button>
     </div>
   </header>
 
@@ -225,6 +225,19 @@
 
         <div class="chapter-grid" id="chaptersContainer"></div>
       </section>
+
+      <section id="admin-view" class="card view-panel" hidden>
+        <div class="plans-header">
+          <div>
+            <h2>Admin Console</h2>
+            <p class="small muted">Manage users, promotions, and moderation queues</p>
+          </div>
+        </div>
+        <div class="admin-panel">
+          <h3>Users</h3>
+          <div id="adminUsersTableContainer">Loading...</div>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -241,9 +254,22 @@
         </svg>
       </button>
       <div class="profile-info">
-        <div class="profile-avatar">V</div>
-        <h2 id="profileName">Loading...</h2>
-        <p id="profileEmail" class="small muted">Loading...</p>
+        <div class="profile-avatar" id="profileAvatar">?</div>
+        <h2 id="profileName">Not signed in</h2>
+        <p id="profileEmail" class="small muted">Sign in below</p>
+      </div>
+
+      <div class="auth-form">
+        <label class="small muted" for="authEmail">Email</label>
+        <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+        <label class="small muted" for="authPassword">Password</label>
+        <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
+        <div class="auth-actions">
+          <button id="signinBtn" class="btn primary" type="button">Sign in</button>
+          <button id="signupBtn" class="btn" type="button">Sign up</button>
+          <button id="signoutBtn" class="btn warn" type="button">Sign out</button>
+        </div>
+        <p id="authStatus" class="small muted" aria-live="polite"></p>
       </div>
     </div>
   </div>
@@ -277,6 +303,13 @@
         <path d="M6 22v-2a4 4 0 014-4h4a4 4 0 014 4v2"/>
       </svg>
       <span>Kids</span>
+    </button>
+    <button class="nav-item admin-nav" data-nav="admin" hidden>
+      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2a7 7 0 100 14 7 7 0 000-14z" />
+        <path d="M12 7v5l3 3" />
+      </svg>
+      <span>Admin</span>
     </button>
     <button class="nav-item" data-nav="posts">
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

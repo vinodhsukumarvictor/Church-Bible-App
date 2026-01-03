@@ -1411,3 +1411,24 @@ main {
   font-size: 14px;
   margin-bottom: 0;
 }
+.auth-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.auth-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--card), transparent 20%);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.auth-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#authStatus { min-height: 18px; }
+
+/* Admin table */
+.admin-panel { margin-top: 12px; }
+.admin-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.admin-table th, .admin-table td { padding: 10px 12px; border: 1px solid rgba(255,255,255,0.04); text-align: left; }
+.admin-table th { background: rgba(255,255,255,0.02); font-weight: 700; }
+.admin-actions { display: flex; gap: 8px; }
+.admin-nav { display: none; }
+.admin-nav.show { display: inline-flex; }

@@ -9,6 +9,24 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
+-- Admin helper: only gpgvictor@gmail.com is app admin
+do $$ begin
+  create or replace function public.is_app_admin()
+    returns boolean
+    language sql
+    security definer
+  as $is_admin$
+    select exists (
+      select 1 from auth.users u
+      where u.id = auth.uid()
+        and lower(u.email) = 'gpgvictor@gmail.com'
+    );
+  $is_admin$;
+exception when duplicate_function then null; end $$;
+do $$ begin
+  grant execute on function public.is_app_admin() to authenticated;
+exception when undefined_object then null; end $$;
+
 alter table public.profiles enable row level security;
 do $$ begin
   create policy profiles_select_own on public.profiles
@@ -21,6 +39,10 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   create policy profiles_update_own on public.profiles
     for update using (auth.uid() = id);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy profiles_admin_manage on public.profiles
+    for all using (public.is_app_admin()) with check (public.is_app_admin());
 exception when duplicate_object then null; end $$;
 
 -- === Bible reading completion by date ===

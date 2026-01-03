@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// Only emit non-sensitive, intentionally public values.
-// Avoid writing SUPABASE_URL, SUPABASE_ANON_KEY, or YOUTUBE_API_KEY to build output
-// because Netlify's secrets scanner will fail the build if they appear.
+// Only emit intentionally public values (Supabase anon key is safe for client use).
 const env = {
-  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || ''
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
+  SUPABASE_URL: process.env.SUPABASE_URL || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || ''
 };
 
 const outPath = path.join(process.cwd(), 'public-env.js');
