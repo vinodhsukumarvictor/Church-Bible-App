@@ -63,6 +63,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Using channel handle instead of ID to ensure we get the right channel
   const YOUTUBE_CHANNEL_HANDLE = '@FCMLiverpool';
   const YOUTUBE_API_KEY = window.YOUTUBE_API_KEY || 'YOUR_API_KEY';
+  const FUNCTIONS_BASE = window.FUNCTIONS_BASE || '/api';
   
   let sermonsSeed = [
     { title: 'Hope in Uncertain Times', speaker: 'FCM Liverpool', youtubeId: 'hY7m5jjJ9mM', date: '2025-12-12' },
@@ -74,7 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function fetchLatestSermons() {
     // Prefer server-side proxy to keep the API key secret.
     try {
-      const proxyUrl = `/.netlify/functions/fetchYouTube?handle=${encodeURIComponent(YOUTUBE_CHANNEL_HANDLE)}&max=6`;
+      const proxyUrl = `${FUNCTIONS_BASE}/fetchYouTube?handle=${encodeURIComponent(YOUTUBE_CHANNEL_HANDLE)}&max=6`;
       const res = await fetch(proxyUrl);
       if (res.ok) {
         const json = await res.json();
@@ -123,7 +124,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Web push configuration (replace VAPID key; subscribe URL already points to Netlify function)
   const VAPID_PUBLIC_KEY = window.VAPID_PUBLIC_KEY || '';
-  const PUSH_SUBSCRIBE_URL = '/.netlify/functions/subscribe';
+  const PUSH_SUBSCRIBE_URL = `${FUNCTIONS_BASE}/subscribe`;
   const pushPromptKey = 'pushPrompted:v1';
 
   const urlBase64ToUint8Array = (base64String) => {

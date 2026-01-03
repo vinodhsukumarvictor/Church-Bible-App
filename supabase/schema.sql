@@ -9,7 +9,7 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
--- Admin helper: only gpgvictor@gmail.com is app admin
+-- Admin helper: treat users with admin roles (profiles.role) or allowlisted emails as admins
 do $$ begin
   create or replace function public.is_app_admin()
     returns boolean
@@ -17,9 +17,14 @@ do $$ begin
     security definer
   as $is_admin$
     select exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'gpgvictor@gmail.com'
+      select 1
+      from public.profiles p
+      join auth.users u on u.id = p.id
+      where p.id = auth.uid()
+        and (
+          p.role in ('admin','super_admin','owner')
+          or lower(u.email) = any (array['gpgvictor@gmail.com'])
+        )
     );
   $is_admin$;
 exception when duplicate_function then null; end $$;
@@ -169,7 +174,30 @@ create table if not exists public.announcements (
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz default now()
 );
+
+-- Audit log for admin actions (role changes, moderation)
+create table if not exists public.admin_audit_log (
+  id bigint generated always as identity primary key,
+  changed_by uuid references auth.users(id) on delete set null,
+  target_user uuid references auth.users(id) on delete set null,
+  old_role text,
+  new_role text,
+  reason text,
+  details jsonb,
+  created_at timestamptz default now()
+);
+create index if not exists idx_admin_audit_changed_by on public.admin_audit_log(changed_by);
+create index if not exists idx_admin_audit_target_user on public.admin_audit_log(target_user);
 create index if not exists idx_announcements_created_at on public.announcements(created_at desc);
+alter table public.admin_audit_log enable row level security;
+do $$ begin
+  create policy admin_audit_admin_select on public.admin_audit_log
+    for select using (public.is_app_admin());
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy admin_audit_admin_all on public.admin_audit_log
+    for all using (public.is_app_admin()) with check (public.is_app_admin());
+exception when duplicate_object then null; end $$;
 alter table public.announcements enable row level security;
 do $$ begin
   create policy announcements_read_all on public.announcements for select using (true);
@@ -178,7 +206,7 @@ do $$ begin
   create policy announcements_insert_admin on public.announcements for insert with check (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('admin','super_admin')
+      where p.id = auth.uid() and p.role in ('admin','super_admin','owner')
     )
   );
 exception when duplicate_object then null; end $$;
@@ -186,7 +214,7 @@ do $$ begin
   create policy announcements_update_admin on public.announcements for update using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('admin','super_admin')
+      where p.id = auth.uid() and p.role in ('admin','super_admin','owner')
     )
   );
 exception when duplicate_object then null; end $$;
@@ -194,7 +222,7 @@ do $$ begin
   create policy announcements_delete_admin on public.announcements for delete using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('admin','super_admin')
+      where p.id = auth.uid() and p.role in ('admin','super_admin','owner')
     )
   );
 exception when duplicate_object then null; end $$;
@@ -221,12 +249,12 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 do $$ begin
   create policy kids_uploads_admin_update on public.kids_uploads for update using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','super_admin'))
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','super_admin','owner'))
   );
 exception when duplicate_object then null; end $$;
 do $$ begin
   create policy kids_uploads_admin_delete on public.kids_uploads for delete using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','super_admin'))
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','super_admin','owner'))
   );
 exception when duplicate_object then null; end $$;
 do $$ begin
@@ -280,6 +308,10 @@ create table if not exists public.verse_likes (
   likes bigint default 0,
   updated_at timestamptz default now()
 );
+alter table public.verse_likes enable row level security;
+do $$ begin
+  create policy verse_likes_public_select on public.verse_likes for select using (true);
+exception when duplicate_object then null; end $$;
 do $$ begin
   create or replace function public.increment_verse_like(p_id text)
     returns bigint language plpgsql security definer as $vlike$

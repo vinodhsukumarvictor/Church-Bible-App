@@ -1,0 +1,5 @@
+[
+  { "q": "Where was Jesus born?", "options": ["Nazareth","Bethlehem","Jerusalem","Capernaum"], "answer": 1 },
+  { "q": "How many days did it rain during the flood?", "options": ["20","30","40","50"], "answer": 2 },
+  { "q": "Who led Israel after Moses?", "options": ["Joshua","Caleb","Samuel","Saul"], "answer": 0 }
+]

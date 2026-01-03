@@ -1,0 +1,5 @@
+[
+  { "title": "Christmas Service Schedule", "priority": "high", "tag": "Services", "date": "2025-12-24", "content": "Join us for special Christmas services at 10am and 6pm." },
+  { "title": "Youth Retreat Registration", "priority": "normal", "tag": "Youth", "date": "2026-01-05", "content": "Register for the weekend youth retreat. Food and transport provided." },
+  { "title": "Prayer Night Every Wednesday", "priority": "low", "tag": "Prayer", "date": "2026-01-03", "content": "A weekly prayer gathering at 7pm. All welcome." }
+]
